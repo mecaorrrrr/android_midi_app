@@ -14,7 +14,8 @@ export class InputManager {
             // Selection state
             selectedNotes: [], // Array of selected note references
             selectionStart: null, // {time, pitch} - anchor point for range selection
-            hasSelection: false
+            hasSelection: false,
+            clipboard: null
         };
 
         this.lastButtonState = [];
@@ -246,10 +247,12 @@ export class InputManager {
         const wasDown = (i) => this.lastButtonState[i];
 
         try {
-            // Button 0 (A/Cross): Clear selection if exists, or Place Note
+            // Button 0 (A/Cross): Copy selection, Paste, or Place Note
             if (isDown(0) && !wasDown(0) && dx === 0 && dy === 0) {
                 if (this.state.hasSelection) {
-                    this.clearSelection();
+                    this.copySelection();
+                } else if (this.state.clipboard) {
+                    this.pasteClipboard();
                 } else {
                     this.placeNote();
                 }
@@ -260,10 +263,10 @@ export class InputManager {
                 this.playFromCursor();
             }
 
-            // Button 1 (B/Circle): Clear selection
+            // Button 1 (B/Circle): Delete selection
             if (isDown(1) && !wasDown(1)) {
                 if (this.state.hasSelection) {
-                    this.clearSelection();
+                    this.deleteSelectedNotes();
                 }
             }
 
@@ -289,6 +292,65 @@ export class InputManager {
                 this.lastButtonState[i] = gp.buttons[i].pressed;
             }
         }
+    }
+
+    copySelection() {
+        if (!this.state.hasSelection || this.state.selectedNotes.length === 0) return;
+
+        // Find the bounding box of the selection to use as anchor
+        let minTime = Infinity;
+        let minPitch = Infinity;
+
+        this.state.selectedNotes.forEach(n => {
+            if (n.time < minTime) minTime = n.time;
+            if (n.pitch < minPitch) minPitch = n.pitch;
+        });
+
+        const refTime = minTime;
+        const refPitch = minPitch;
+
+        this.state.clipboard = this.state.selectedNotes.map(n => ({
+            deltaTime: n.time - refTime,
+            deltaPitch: n.pitch - refPitch,
+            duration: n.duration,
+            velocity: n.velocity
+        }));
+
+        // Deselect to allow cursor movement
+        this.state.selectedNotes = [];
+        this.state.hasSelection = false;
+        this.updateStatus(`Copied ${this.state.clipboard.length} notes`);
+    }
+
+    pasteClipboard() {
+        if (!this.state.clipboard) return;
+
+        const track = this.app.songData.tracks[this.app.currentTrackId];
+        const refTime = this.state.cursor.time;
+        const refPitch = this.state.cursor.pitch;
+
+        const newNotes = this.state.clipboard.map(n => ({
+            time: Math.max(0, refTime + n.deltaTime),
+            pitch: Math.max(0, Math.min(127, refPitch + n.deltaPitch)),
+            duration: n.duration,
+            velocity: n.velocity
+        }));
+
+        track.notes.push(...newNotes);
+        
+        // Consume clipboard to return to normal mode (allows placing single notes next)
+        this.state.clipboard = null;
+        this.updateStatus(`Pasted ${newNotes.length} notes`);
+    }
+
+    deleteSelectedNotes() {
+        if (!this.state.hasSelection) return;
+
+        const track = this.app.songData.tracks[this.app.currentTrackId];
+        track.notes = track.notes.filter(n => !this.state.selectedNotes.includes(n));
+        
+        this.updateStatus(`Deleted ${this.state.selectedNotes.length} notes`);
+        this.clearSelection();
     }
 
     placeNote() {
