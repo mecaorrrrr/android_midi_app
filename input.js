@@ -111,8 +111,8 @@ export class InputManager {
         const aButtonHeld = gp.buttons[0] && gp.buttons[0].pressed;
         const bButtonHeld = gp.buttons[1] && gp.buttons[1].pressed;
         const yButtonHeld = gp.buttons[3] && gp.buttons[3].pressed; // Y/Triangle button
-        const l2Pressed = gp.buttons[6] && gp.buttons[6].pressed;
-        const r2Pressed = gp.buttons[7] && gp.buttons[7].pressed;
+        const l1Pressed = gp.buttons[4] && gp.buttons[4].pressed;
+        const r1Pressed = gp.buttons[5] && gp.buttons[5].pressed;
 
         // D-Pad
         if (gp.buttons[12].pressed) dy = 1; // Up
@@ -146,13 +146,13 @@ export class InputManager {
                     this.updateStatus(`Vol: ${track.volume.toFixed(2)}`);
                 }
 
-                // Pan (L2/R2)
-                if (l2Pressed && !this.lastButtonState[6]) {
+                // Pan (L1/R1)
+                if (l1Pressed && !this.lastButtonState[4]) {
                     track.pan = Math.max(-1.0, track.pan - 0.1);
                     this.app.audio.setTrackPan(this.app.currentTrackId, track.pan);
                     this.updateStatus(`Pan: ${track.pan.toFixed(1)}`);
                 }
-                if (r2Pressed && !this.lastButtonState[7]) {
+                if (r1Pressed && !this.lastButtonState[5]) {
                     track.pan = Math.min(1.0, track.pan + 0.1);
                     this.app.audio.setTrackPan(this.app.currentTrackId, track.pan);
                     this.updateStatus(`Pan: ${track.pan.toFixed(1)}`);
@@ -161,7 +161,7 @@ export class InputManager {
             } catch (e) {
                 console.error("Error in shortcuts:", e);
             }
-        } else if (r2Pressed) {
+        } else if (r1Pressed) {
             // Grid Shortcuts
             if (gp.buttons[14].pressed && !this.lastButtonState[14]) {
                 let div = this.app.ui.gridDivisions;
@@ -218,9 +218,9 @@ export class InputManager {
 
         } else {
             // Normal cursor movement
-            // Check for L2 modifier for fast movement
-            const unitX = l2Pressed ? 'measure' : 'grid';
-            const unitY = l2Pressed ? 'octave' : 'semitone';
+            // Check for L1 modifier for fast movement
+            const unitX = l1Pressed ? 'measure' : 'grid';
+            const unitY = l1Pressed ? 'octave' : 'semitone';
 
             this.processMovement('x', dx, unitX);
             this.processMovement('y', dy, unitY);
