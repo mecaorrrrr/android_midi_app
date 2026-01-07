@@ -1,0 +1,173 @@
+:root {
+    --bg-color: #0d0d12;
+    --panel-bg: rgba(255, 255, 255, 0.05);
+    --panel-border: rgba(255, 255, 255, 0.1);
+    --primary-accent: #6c5ce7;
+    --secondary-accent: #a29bfe;
+    --text-main: #ffffff;
+    --text-muted: #b2bec3;
+    --grid-line: #2d3436;
+    --grid-line-bar: #636e72;
+    --note-bg: #fd79a8;
+    --cursor-color: rgba(108, 92, 231, 0.5);
+    --font-main: 'Outfit', sans-serif;
+}
+
+* {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+    user-select: none;
+    /* Prevent selection for app-like feel */
+    -webkit-tap-highlight-color: transparent;
+}
+
+body {
+    background-color: var(--bg-color);
+    color: var(--text-main);
+    font-family: var(--font-main);
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+}
+
+#app {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+/* Glassmorphism Header */
+header.glass-panel {
+    background: var(--panel-bg);
+    backdrop-filter: blur(10px);
+    -webkit-backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--panel-border);
+    padding: 1rem 1.5rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    z-index: 10;
+}
+
+h1 {
+    font-weight: 300;
+    font-size: 1.2rem;
+    letter-spacing: 1px;
+}
+
+.accent {
+    color: var(--primary-accent);
+    font-weight: 600;
+}
+
+.controls {
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+}
+
+button {
+    background: transparent;
+    border: 1px solid var(--panel-border);
+    color: var(--text-main);
+    padding: 0.5rem 1rem;
+    border-radius: 8px;
+    font-family: inherit;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+button:hover {
+    background: rgba(255, 255, 255, 0.1);
+    border-color: var(--secondary-accent);
+}
+
+button:active {
+    transform: scale(0.95);
+}
+
+.icon-btn {
+    font-size: 1.2rem;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    background: rgba(108, 92, 231, 0.1);
+    border-color: var(--primary-accent);
+}
+
+.secondary-btn {
+    font-size: 0.9rem;
+}
+
+.preset-select {
+    background: rgba(255, 255, 255, 0.1);
+    border: 1px solid var(--panel-border);
+    color: var(--text-main);
+    padding: 0.5rem;
+    border-radius: 8px;
+    font-family: inherit;
+    font-size: 0.85rem;
+    min-width: 150px;
+    max-width: 200px;
+}
+
+.preset-select:disabled {
+    opacity: 0.5;
+}
+
+/* Canvas Area */
+main {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+    background: #111;
+    cursor: crosshair;
+}
+
+#canvas-container {
+    width: 100%;
+    height: 100%;
+    position: absolute;
+    top: 0;
+    left: 0;
+}
+
+canvas {
+    display: block;
+}
+
+/* Floating Status Elements */
+.floating-status {
+    position: absolute;
+    bottom: 20px;
+    left: 20px;
+    padding: 10px 20px;
+    border-radius: 20px;
+    background: rgba(0, 0, 0, 0.6);
+    border: 1px solid var(--panel-border);
+    font-size: 0.8rem;
+    color: var(--text-muted);
+    pointer-events: none;
+}
+
+.floating-info {
+    position: absolute;
+    bottom: 20px;
+    right: 20px;
+    padding: 10px 20px;
+    border-radius: 20px;
+    background: rgba(0, 0, 0, 0.6);
+    border: 1px solid var(--panel-border);
+    font-size: 0.9rem;
+    font-family: monospace;
+    pointer-events: none;
+}
+
+#status-display {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+}

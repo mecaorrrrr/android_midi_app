@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Gamepad MIDI Sequencer</title>
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+</head>
+
+<body>
+    <div id="app">
+        <header class="glass-panel">
+            <h1>MIDI Seq <span class="accent">Pro</span></h1>
+            <div class="controls">
+                <button id="btn-play" class="icon-btn">▶</button>
+                <button id="btn-stop" class="icon-btn">■</button>
+                <button id="btn-add-bpm" class="secondary-btn">Add BPM</button>
+                <button id="btn-add-ts" class="secondary-btn">Add TS</button>
+                <div class="divider"></div>
+                <button id="btn-save" class="secondary-btn">Save</button>
+                <button id="btn-load" class="secondary-btn">Load</button>
+                <input type="file" id="file-input-project" accept=".json" style="display: none;">
+                <button id="btn-export" class="secondary-btn">Export MIDI</button>
+                <div class="divider"></div>
+                <button id="btn-load-sfz" class="secondary-btn">SFZ</button>
+                <input type="file" id="sfz-file-input" webkitdirectory directory multiple style="display: none;">
+                <button id="btn-load-sf2" class="secondary-btn">SF2</button>
+                <input type="file" id="sf2-file-input" accept=".sf2" style="display: none;">
+                <select id="preset-selector" class="preset-select" disabled>
+                    <option value="">-- No SF2 --</option>
+                </select>
+                <div id="status-display">Ready</div>
+            </div>
+        </header>
+
+        <main>
+            <div id="canvas-container">
+                <canvas id="piano-roll"></canvas>
+            </div>
+        </main>
+
+        <div id="gamepad-status" class="glass-panel floating-status">
+            Gamepad: <span id="gamepad-name">Disconnected</span>
+        </div>
+
+        <div id="cursor-info" class="glass-panel floating-info">
+            T: <span id="time-val">0</span> | P: <span id="pitch-val">C4</span>
+        </div>
+    </div>
+
+    <script type="module" src="main.js"></script>
+</body>
+
+</html>

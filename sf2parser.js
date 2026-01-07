@@ -1,0 +1,370 @@
+// Improved SF2 Parser for Web Audio
+// Supports reading presets and sample data from SF2 files
+
+export class SF2Parser {
+    constructor(arrayBuffer) {
+        this.data = new DataView(arrayBuffer);
+        this.buffer = arrayBuffer;
+        this.presets = [];
+        this.instruments = [];
+        this.samples = [];
+        this.sampleData = null;
+    }
+
+    parse() {
+        // Check RIFF header
+        const riff = this.readFourCC(0);
+        if (riff !== 'RIFF') {
+            throw new Error('Not a valid RIFF file');
+        }
+
+        const fileSize = this.data.getUint32(4, true);
+        const sfbk = this.readFourCC(8);
+        if (sfbk !== 'sfbk') {
+            throw new Error('Not a valid SF2 file');
+        }
+
+        // Parse chunks
+        let offset = 12;
+        while (offset < fileSize + 8) {
+            const chunkId = this.readFourCC(offset);
+            const chunkSize = this.data.getUint32(offset + 4, true);
+
+            if (chunkId === 'LIST') {
+                const listType = this.readFourCC(offset + 8);
+                if (listType === 'sdta') {
+                    this.parseSdta(offset + 12, chunkSize - 4);
+                } else if (listType === 'pdta') {
+                    this.parsePdta(offset + 12, chunkSize - 4);
+                }
+            }
+
+            offset += 8 + chunkSize;
+            if (chunkSize % 2 === 1) offset++; // Pad byte
+        }
+
+        return {
+            presets: this.presets,
+            instruments: this.instruments,
+            samples: this.samples,
+            sampleData: this.sampleData
+        };
+    }
+
+    readFourCC(offset) {
+        return String.fromCharCode(
+            this.data.getUint8(offset),
+            this.data.getUint8(offset + 1),
+            this.data.getUint8(offset + 2),
+            this.data.getUint8(offset + 3)
+        );
+    }
+
+    readString(offset, length) {
+        let str = '';
+        for (let i = 0; i < length; i++) {
+            const char = this.data.getUint8(offset + i);
+            if (char === 0) break;
+            str += String.fromCharCode(char);
+        }
+        return str;
+    }
+
+    parseSdta(offset, size) {
+        // Sample data chunk
+        const end = offset + size;
+        while (offset < end) {
+            const subId = this.readFourCC(offset);
+            const subSize = this.data.getUint32(offset + 4, true);
+
+            if (subId === 'smpl') {
+                // 16-bit sample data
+                this.sampleData = new Int16Array(this.buffer, offset + 8, subSize / 2);
+            }
+
+            offset += 8 + subSize;
+            if (subSize % 2 === 1) offset++;
+        }
+    }
+
+    parsePdta(offset, size) {
+        // Preset data chunk
+        const end = offset + size;
+        const chunks = {};
+
+        while (offset < end) {
+            const subId = this.readFourCC(offset);
+            const subSize = this.data.getUint32(offset + 4, true);
+            chunks[subId] = { offset: offset + 8, size: subSize };
+            offset += 8 + subSize;
+            if (subSize % 2 === 1) offset++;
+        }
+
+        // Parse preset headers (phdr)
+        if (chunks.phdr) {
+            const count = Math.floor(chunks.phdr.size / 38);
+            for (let i = 0; i < count - 1; i++) { // Last is EOP
+                const off = chunks.phdr.offset + i * 38;
+                this.presets.push({
+                    name: this.readString(off, 20),
+                    preset: this.data.getUint16(off + 20, true),
+                    bank: this.data.getUint16(off + 22, true),
+                    bagIndex: this.data.getUint16(off + 24, true),
+                    library: this.data.getUint32(off + 26, true),
+                    genre: this.data.getUint32(off + 30, true),
+                    morphology: this.data.getUint32(off + 34, true)
+                });
+            }
+        }
+
+        // Parse instrument headers (inst)
+        if (chunks.inst) {
+            const count = Math.floor(chunks.inst.size / 22);
+            for (let i = 0; i < count - 1; i++) {
+                const off = chunks.inst.offset + i * 22;
+                this.instruments.push({
+                    name: this.readString(off, 20),
+                    bagIndex: this.data.getUint16(off + 20, true)
+                });
+            }
+        }
+
+        // Parse sample headers (shdr)
+        if (chunks.shdr) {
+            const count = Math.floor(chunks.shdr.size / 46);
+            for (let i = 0; i < count - 1; i++) {
+                const off = chunks.shdr.offset + i * 46;
+                const sampleType = this.data.getUint16(off + 44, true);
+                
+                this.samples.push({
+                    name: this.readString(off, 20),
+                    start: this.data.getUint32(off + 20, true),
+                    end: this.data.getUint32(off + 24, true),
+                    loopStart: this.data.getUint32(off + 28, true),
+                    loopEnd: this.data.getUint32(off + 32, true),
+                    sampleRate: this.data.getUint32(off + 36, true),
+                    originalPitch: this.data.getUint8(off + 40),
+                    pitchCorrection: this.data.getInt8(off + 41),
+                    sampleLink: this.data.getUint16(off + 42, true),
+                    sampleType: sampleType
+                });
+            }
+        }
+
+        // Parse bags and generators for zone mapping
+        this.parseBagsAndGenerators(chunks);
+    }
+
+    parseBagsAndGenerators(chunks) {
+        // Parse preset bags (pbag)
+        const presetBags = [];
+        if (chunks.pbag) {
+            const count = Math.floor(chunks.pbag.size / 4);
+            for (let i = 0; i < count; i++) {
+                const off = chunks.pbag.offset + i * 4;
+                presetBags.push({
+                    genIndex: this.data.getUint16(off, true),
+                    modIndex: this.data.getUint16(off + 2, true)
+                });
+            }
+        }
+
+        // Parse preset generators (pgen)
+        const presetGens = [];
+        if (chunks.pgen) {
+            const count = Math.floor(chunks.pgen.size / 4);
+            for (let i = 0; i < count; i++) {
+                const off = chunks.pgen.offset + i * 4;
+                presetGens.push({
+                    oper: this.data.getUint16(off, true),
+                    amount: this.data.getInt16(off + 2, true)
+                });
+            }
+        }
+
+        // Parse instrument bags (ibag)
+        const instBags = [];
+        if (chunks.ibag) {
+            const count = Math.floor(chunks.ibag.size / 4);
+            for (let i = 0; i < count; i++) {
+                const off = chunks.ibag.offset + i * 4;
+                instBags.push({
+                    genIndex: this.data.getUint16(off, true),
+                    modIndex: this.data.getUint16(off + 2, true)
+                });
+            }
+        }
+
+        // Parse instrument generators (igen)
+        const instGens = [];
+        if (chunks.igen) {
+            const count = Math.floor(chunks.igen.size / 4);
+            for (let i = 0; i < count; i++) {
+                const off = chunks.igen.offset + i * 4;
+                instGens.push({
+                    oper: this.data.getUint16(off, true),
+                    amount: this.data.getInt16(off + 2, true)
+                });
+            }
+        }
+
+        // Link presets to instruments
+        for (let i = 0; i < this.presets.length; i++) {
+            const preset = this.presets[i];
+            const bagStart = preset.bagIndex;
+            const bagEnd = i + 1 < this.presets.length ? 
+                this.presets[i + 1].bagIndex : presetBags.length - 1;
+
+            preset.zones = [];
+            
+            for (let b = bagStart; b < bagEnd; b++) {
+                const bag = presetBags[b];
+                const genStart = bag.genIndex;
+                const genEnd = b + 1 < presetBags.length ? 
+                    presetBags[b + 1].genIndex : presetGens.length;
+
+                const zone = { 
+                    generators: {},
+                    isGlobal: false
+                };
+                
+                let hasInstrument = false;
+                
+                for (let g = genStart; g < genEnd; g++) {
+                    const gen = presetGens[g];
+                    zone.generators[gen.oper] = gen.amount;
+                    
+                    // Generator 41 is instrument index
+                    if (gen.oper === 41) {
+                        zone.instrumentIndex = gen.amount;
+                        hasInstrument = true;
+                    }
+                }
+
+                // First zone without instrument is global zone
+                if (b === bagStart && !hasInstrument) {
+                    zone.isGlobal = true;
+                }
+                
+                preset.zones.push(zone);
+            }
+        }
+
+        // Link instruments to samples
+        for (let i = 0; i < this.instruments.length; i++) {
+            const inst = this.instruments[i];
+            const bagStart = inst.bagIndex;
+            const bagEnd = i + 1 < this.instruments.length ? 
+                this.instruments[i + 1].bagIndex : instBags.length - 1;
+
+            inst.zones = [];
+            
+            for (let b = bagStart; b < bagEnd; b++) {
+                const bag = instBags[b];
+                const genStart = bag.genIndex;
+                const genEnd = b + 1 < instBags.length ? 
+                    instBags[b + 1].genIndex : instGens.length;
+
+                const zone = { 
+                    generators: {},
+                    isGlobal: false
+                };
+                
+                let hasSample = false;
+                
+                for (let g = genStart; g < genEnd; g++) {
+                    const gen = instGens[g];
+                    zone.generators[gen.oper] = gen.amount;
+                    
+                    // Generator 53 is sample index
+                    if (gen.oper === 53) {
+                        zone.sampleIndex = gen.amount;
+                        hasSample = true;
+                    }
+                }
+
+                // Parse key and velocity ranges
+                // Generator 43: keyRange
+                if (zone.generators[43] !== undefined) {
+                    zone.keyLo = zone.generators[43] & 0xFF;
+                    zone.keyHi = (zone.generators[43] >> 8) & 0xFF;
+                } else {
+                    zone.keyLo = 0;
+                    zone.keyHi = 127;
+                }
+                
+                // Generator 44: velRange
+                if (zone.generators[44] !== undefined) {
+                    zone.velLo = zone.generators[44] & 0xFF;
+                    zone.velHi = (zone.generators[44] >> 8) & 0xFF;
+                } else {
+                    zone.velLo = 0;
+                    zone.velHi = 127;
+                }
+
+                // First zone without sample is global zone
+                if (b === bagStart && !hasSample) {
+                    zone.isGlobal = true;
+                }
+
+                inst.zones.push(zone);
+            }
+        }
+    }
+
+    // Helper method to get sample for a given preset, note and velocity
+    getSampleForNote(presetIndex, note, velocity) {
+        if (presetIndex < 0 || presetIndex >= this.presets.length) {
+            return null;
+        }
+
+        const preset = this.presets[presetIndex];
+        const globalZone = preset.zones.find(z => z.isGlobal);
+
+        // Find matching preset zone
+        for (const zone of preset.zones) {
+            if (zone.isGlobal) continue;
+            if (zone.instrumentIndex === undefined) continue;
+
+            const instrument = this.instruments[zone.instrumentIndex];
+            if (!instrument) continue;
+
+            const instGlobalZone = instrument.zones.find(z => z.isGlobal);
+
+            // Find matching instrument zone
+            for (const instZone of instrument.zones) {
+                if (instZone.isGlobal) continue;
+                if (instZone.sampleIndex === undefined) continue;
+
+                // Check key and velocity range
+                if (note >= instZone.keyLo && note <= instZone.keyHi &&
+                    velocity >= instZone.velLo && velocity <= instZone.velHi) {
+                    
+                    const sample = this.samples[instZone.sampleIndex];
+                    if (sample) {
+                        return {
+                            sample: sample,
+                            presetZone: zone,
+                            instrumentZone: instZone,
+                            presetGlobal: globalZone,
+                            instrumentGlobal: instGlobalZone
+                        };
+                    }
+                }
+            }
+        }
+
+        return null;
+    }
+
+    // Helper to get all presets in a readable format
+    getPresetList() {
+        return this.presets.map((preset, index) => ({
+            index: index,
+            name: preset.name,
+            bank: preset.bank,
+            preset: preset.preset,
+            fullName: `${preset.bank}:${preset.preset} ${preset.name}`
+        }));
+    }
+}
