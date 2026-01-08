@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gamepad Button Debugger</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            background: #1a1a1a;
+            color: #00ff00;
+            padding: 20px;
+            margin: 0;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 {
+            text-align: center;
+            color: #00ff00;
+            text-shadow: 0 0 10px #00ff00;
+        }
+        .status {
+            background: #000;
+            border: 2px solid #00ff00;
+            padding: 15px;
+            margin-bottom: 20px;
+            border-radius: 5px;
+        }
+        .button-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+            gap: 10px;
+            margin-bottom: 20px;
+        }
+        .button-info {
+            background: #000;
+            border: 2px solid #333;
+            padding: 10px;
+            border-radius: 5px;
+            transition: all 0.1s;
+        }
+        .button-info.active {
+            border-color: #00ff00;
+            background: #003300;
+            box-shadow: 0 0 20px #00ff00;
+        }
+        .button-name {
+            font-weight: bold;
+            color: #ffff00;
+            margin-bottom: 5px;
+        }
+        .button-value {
+            font-size: 0.9em;
+        }
+        .axes-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+            gap: 10px;
+        }
+        .axis-info {
+            background: #000;
+            border: 2px solid #333;
+            padding: 10px;
+            border-radius: 5px;
+        }
+        .axis-bar {
+            width: 100%;
+            height: 20px;
+            background: #333;
+            position: relative;
+            margin-top: 5px;
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        .axis-fill {
+            height: 100%;
+            background: #00ff00;
+            transition: width 0.1s;
+            position: absolute;
+        }
+        .combo-test {
+            background: #000;
+            border: 2px solid #ff00ff;
+            padding: 15px;
+            margin-top: 20px;
+            border-radius: 5px;
+        }
+        .combo-test h2 {
+            color: #ff00ff;
+            margin-top: 0;
+        }
+        .combo-result {
+            font-size: 1.2em;
+            color: #ffff00;
+            margin-top: 10px;
+        }
+        .highlight {
+            color: #ff0000;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎮 Gamepad Button Debugger</h1>
+        
+        <div class="status">
+            <div><strong>接続状態:</strong> <span id="connection-status">ゲームパッドを接続してください</span></div>
+            <div><strong>コントローラー名:</strong> <span id="gamepad-name">-</span></div>
+            <div><strong>ボタン数:</strong> <span id="button-count">-</span></div>
+            <div><strong>軸数:</strong> <span id="axes-count">-</span></div>
+        </div>
+
+        <h2>ボタン状態</h2>
+        <div class="button-grid" id="buttons-container"></div>
+
+        <h2>アナログスティック / 軸</h2>
+        <div class="axes-grid" id="axes-container"></div>
+
+        <div class="combo-test">
+            <h2>R2 + 十字キー コンボテスト</h2>
+            <div>
+                <strong>R2ボタン (Index 7):</strong>
+                <div id="r2-status">待機中...</div>
+            </div>
+            <div style="margin-top: 10px;">
+                <strong>十字キー状態:</strong>
+                <div id="dpad-status">待機中...</div>
+            </div>
+            <div class="combo-result" id="combo-result">
+                R2を押しながら十字キーを操作してください
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let activeGamepad = null;
+        const DEADZONE = 0.2;
+
+        // ボタン名のマッピング
+        const buttonNames = {
+            0: 'A (South)',
+            1: 'B (East)',
+            2: 'X (West)',
+            3: 'Y (North)',
+            4: 'L1 (LB)',
+            5: 'R1 (RB)',
+            6: 'L2 (LT)',
+            7: 'R2 (RT)',
+            8: 'Select',
+            9: 'Start',
+            10: 'L3 (Left Stick)',
+            11: 'R3 (Right Stick)',
+            12: 'D-Pad Up',
+            13: 'D-Pad Down',
+            14: 'D-Pad Left',
+            15: 'D-Pad Right',
+            16: 'Home/Guide'
+        };
+
+        window.addEventListener('gamepadconnected', (e) => {
+            console.log('Gamepad connected:', e.gamepad);
+            activeGamepad = e.gamepad;
+            document.getElementById('connection-status').textContent = '✓ 接続済み';
+            document.getElementById('gamepad-name').textContent = e.gamepad.id;
+            document.getElementById('button-count').textContent = e.gamepad.buttons.length;
+            document.getElementById('axes-count').textContent = e.gamepad.axes.length;
+            
+            initializeUI(e.gamepad);
+        });
+
+        window.addEventListener('gamepaddisconnected', (e) => {
+            console.log('Gamepad disconnected:', e.gamepad);
+            activeGamepad = null;
+            document.getElementById('connection-status').textContent = '✗ 切断されました';
+        });
+
+        function initializeUI(gamepad) {
+            // ボタン用UI
+            const buttonsContainer = document.getElementById('buttons-container');
+            buttonsContainer.innerHTML = '';
+            for (let i = 0; i < gamepad.buttons.length; i++) {
+                const div = document.createElement('div');
+                div.className = 'button-info';
+                div.id = `button-${i}`;
+                div.innerHTML = `
+                    <div class="button-name">${buttonNames[i] || `Button ${i}`}</div>
+                    <div class="button-value">
+                        <div>Index: ${i}</div>
+                        <div>Pressed: <span id="btn-pressed-${i}">false</span></div>
+                        <div>Value: <span id="btn-value-${i}">0.00</span></div>
+                    </div>
+                `;
+                buttonsContainer.appendChild(div);
+            }
+
+            // 軸用UI
+            const axesContainer = document.getElementById('axes-container');
+            axesContainer.innerHTML = '';
+            const axisNames = ['Left Stick X', 'Left Stick Y', 'Right Stick X', 'Right Stick Y'];
+            for (let i = 0; i < gamepad.axes.length; i++) {
+                const div = document.createElement('div');
+                div.className = 'axis-info';
+                div.innerHTML = `
+                    <div class="button-name">${axisNames[i] || `Axis ${i}`}</div>
+                    <div>Value: <span id="axis-value-${i}">0.00</span></div>
+                    <div class="axis-bar">
+                        <div class="axis-fill" id="axis-bar-${i}"></div>
+                    </div>
+                `;
+                axesContainer.appendChild(div);
+            }
+        }
+
+        function updateGamepadState() {
+            const gamepads = navigator.getGamepads();
+            if (!gamepads) return;
+
+            let gp = null;
+            for (let i = 0; i < gamepads.length; i++) {
+                if (gamepads[i] && gamepads[i].connected) {
+                    gp = gamepads[i];
+                    if (!activeGamepad) {
+                        activeGamepad = gp;
+                        document.getElementById('connection-status').textContent = '✓ 接続済み';
+                        document.getElementById('gamepad-name').textContent = gp.id;
+                        document.getElementById('button-count').textContent = gp.buttons.length;
+                        document.getElementById('axes-count').textContent = gp.axes.length;
+                        initializeUI(gp);
+                    }
+                    break;
+                }
+            }
+
+            if (!gp) return;
+
+            // ボタン状態更新
+            for (let i = 0; i < gp.buttons.length; i++) {
+                const button = gp.buttons[i];
+                const buttonDiv = document.getElementById(`button-${i}`);
+                if (buttonDiv) {
+                    const pressed = button.pressed || button.value > 0.3;
+                    buttonDiv.classList.toggle('active', pressed);
+                    document.getElementById(`btn-pressed-${i}`).textContent = button.pressed;
+                    document.getElementById(`btn-value-${i}`).textContent = button.value.toFixed(2);
+                }
+            }
+
+            // 軸状態更新
+            for (let i = 0; i < gp.axes.length; i++) {
+                const value = gp.axes[i];
+                const valueSpan = document.getElementById(`axis-value-${i}`);
+                const bar = document.getElementById(`axis-bar-${i}`);
+                if (valueSpan) {
+                    valueSpan.textContent = value.toFixed(2);
+                }
+                if (bar) {
+                    const percent = ((value + 1) / 2) * 100;
+                    bar.style.width = percent + '%';
+                }
+            }
+
+            // R2 + 十字キー コンボテスト
+            updateComboTest(gp);
+        }
+
+        function updateComboTest(gp) {
+            const r2Button = gp.buttons[7];
+            const r2Pressed = r2Button && r2Button.pressed;
+            const r2Value = r2Button ? r2Button.value : 0;
+            const r2Active = r2Pressed || r2Value > 0.3;
+
+            // R2状態表示
+            const r2Status = document.getElementById('r2-status');
+            r2Status.innerHTML = `
+                <div>pressed: <span class="${r2Pressed ? 'highlight' : ''}">${r2Pressed}</span></div>
+                <div>value: <span class="${r2Value > 0.3 ? 'highlight' : ''}">${r2Value.toFixed(2)}</span></div>
+                <div>判定: <span class="${r2Active ? 'highlight' : ''}">${r2Active ? '押されている' : '押されていない'}</span></div>
+            `;
+
+            // 十字キー状態
+            const dpadUp = gp.buttons[12] && gp.buttons[12].pressed;
+            const dpadDown = gp.buttons[13] && gp.buttons[13].pressed;
+            const dpadLeft = gp.buttons[14] && gp.buttons[14].pressed;
+            const dpadRight = gp.buttons[15] && gp.buttons[15].pressed;
+
+            const dpadStatus = document.getElementById('dpad-status');
+            dpadStatus.innerHTML = `
+                上: ${dpadUp ? '✓' : '-'} | 
+                下: ${dpadDown ? '✓' : '-'} | 
+                左: ${dpadLeft ? '✓' : '-'} | 
+                右: ${dpadRight ? '✓' : '-'}
+            `;
+
+            // コンボ判定
+            const comboResult = document.getElementById('combo-result');
+            if (r2Active && (dpadUp || dpadDown || dpadLeft || dpadRight)) {
+                const direction = dpadUp ? '上' : dpadDown ? '下' : dpadLeft ? '左' : '右';
+                comboResult.textContent = `✓ コンボ成功！ R2 + 十字キー${direction}`;
+                comboResult.style.color = '#00ff00';
+            } else if (r2Active) {
+                comboResult.textContent = 'R2が押されています - 十字キーを操作してください';
+                comboResult.style.color = '#ffff00';
+            } else if (dpadUp || dpadDown || dpadLeft || dpadRight) {
+                comboResult.textContent = '十字キーが押されています - R2を押してください';
+                comboResult.style.color = '#ffff00';
+            } else {
+                comboResult.textContent = 'R2を押しながら十字キーを操作してください';
+                comboResult.style.color = '#999';
+            }
+        }
+
+        // ゲームループ
+        function gameLoop() {
+            updateGamepadState();
+            requestAnimationFrame(gameLoop);
+        }
+
+        gameLoop();
+    </script>
+</body>
+</html>

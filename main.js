@@ -558,7 +558,12 @@ class App {
     }
 
     checkAndPlayNotes(start, end) {
+        const anySolo = this.songData.tracks.some(t => t.solo);
+
         for (const track of this.songData.tracks) {
+            if (anySolo) {
+                if (!track.solo) continue;
+            }
             if (track.muted) continue;
 
             for (const note of track.notes) {

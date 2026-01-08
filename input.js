@@ -3,10 +3,25 @@ export class InputManager {
         this.app = app;
         this.gamepads = {};
         this.activeGamepadIndex = null;
+        this.lastR2StickState = { x: 0, y: 0 }; // R2+スティック用の状態記憶
+        this.lastStartStickState = { x: 0, y: 0 }; // Start+スティック用の状態記憶
 
         this.lastNoteDuration = null;
 
         // State
+        this.state = {
+            // ... (existing state)
+        };
+
+        // Button Mapping (Standard Gamepad Layout)
+        // DirectInput controllers may require different indices.
+        this.buttonMap = {
+            A: 0, B: 1, X: 3, Y: 4,
+            L1: 8, R1: 9, L2: 6, R2: 7,
+            SELECT: 10, START: 11,
+            UP: 12, DOWN: 13, LEFT: 14, RIGHT: 15
+        };
+
         this.state = {
             cursor: {
                 time: 0,
@@ -36,9 +51,9 @@ export class InputManager {
     }
 
     onGamepadConnected(e) {
-        console.log("Gamepad connected at index %d: %s. %d buttons, %d axes.",
+        console.log("Gamepad connected at index %d: %s. %d buttons, %d axes. Mapping: %s",
             e.gamepad.index, e.gamepad.id,
-            e.gamepad.buttons.length, e.gamepad.axes.length);
+            e.gamepad.buttons.length, e.gamepad.axes.length, e.gamepad.mapping);
         this.gamepads[e.gamepad.index] = e.gamepad;
         this.activeGamepadIndex = e.gamepad.index; // Auto switch to latest
 
@@ -99,8 +114,8 @@ export class InputManager {
     }
 
     handleInput(gp) {
-        // Threshold for sticks
-        const DEADZONE = 0.2;
+        const DEADZONE = 0.2; // 通常のデッドゾーン
+        const SHORTCUT_DEADZONE = 0.6; // ショートカット用の高いデッドゾーン
 
         // D-PAD & Stick handling for Cursor Movement
         // Mapping (Standard Gamepad)
@@ -111,112 +126,155 @@ export class InputManager {
         let dx = 0;
         let dy = 0;
 
+        const map = this.buttonMap;
+
+        // Helper to safely check button state
+        const isPressed = (idx) => gp.buttons[idx] && gp.buttons[idx].pressed;
+
         // Check button states
-        const aButtonHeld = gp.buttons[0] && gp.buttons[0].pressed;
-        const bButtonHeld = gp.buttons[1] && gp.buttons[1].pressed;
-        const yButtonHeld = gp.buttons[3] && gp.buttons[3].pressed; // Y/Triangle button
-        const l1Pressed = gp.buttons[4] && gp.buttons[4].pressed;
-        const r1Pressed = gp.buttons[5] && gp.buttons[5].pressed;
-        const l2Pressed = gp.buttons[6] && gp.buttons[6].pressed;
-        const r2Pressed = gp.buttons[7] && gp.buttons[7].pressed;
-        const startButtonHeld = gp.buttons[9] && gp.buttons[9].pressed;
-        const selectButtonHeld = gp.buttons[8] && gp.buttons[8].pressed;
+        const aButtonHeld = isPressed(map.A);
+        const bButtonHeld = isPressed(map.B);
+        const yButtonHeld = isPressed(map.Y);
+        const l1Pressed = isPressed(map.L1);
+        const r1Pressed = isPressed(map.R1);
+        const l2Pressed = isPressed(map.L2);
+        const r2Pressed = isPressed(map.R2);
+        const startButtonHeld = isPressed(map.START);
+        const selectButtonHeld = isPressed(map.SELECT);
 
         // D-Pad
-        if (gp.buttons[12].pressed) dy = 1; // Up
-        if (gp.buttons[13].pressed) dy = -1; // Down
+        if (isPressed(map.UP)) dy = 1; // Up
+        if (isPressed(map.DOWN)) dy = -1; // Down
 
         // Undo / Redo (L1 / R1)
-        if (l1Pressed && !this.lastButtonState[4]) {
+        if (l1Pressed && !this.lastButtonState[map.L1]) {
             this.app.undo();
         }
-        if (r1Pressed && !this.lastButtonState[5]) {
+        if (r1Pressed && !this.lastButtonState[map.R1]) {
             this.app.redo();
         }
 
         if (startButtonHeld) {
-            dx = 0;
-            dy = 0;
+        dx = 0;
+        dy = 0;
 
-            const track = this.app.songData.tracks[this.app.currentTrackId];
+        const track = this.app.songData.tracks[this.app.currentTrackId];
 
-            // Volume (Up/Down)
-            if (gp.buttons[12].pressed && !this.lastButtonState[12]) {
-                track.volume = Math.min(1.0, track.volume + 0.05);
-                this.app.audio.setTrackVolume(this.app.currentTrackId, track.volume);
-                this.updateStatus(`Vol: ${track.volume.toFixed(2)}`);
-                this.startComboUsed = true;
-            }
-            if (gp.buttons[13].pressed && !this.lastButtonState[13]) {
-                track.volume = Math.max(0, track.volume - 0.05);
-                this.app.audio.setTrackVolume(this.app.currentTrackId, track.volume);
-                this.updateStatus(`Vol: ${track.volume.toFixed(2)}`);
-                this.startComboUsed = true;
-            }
+        // スティックをデジタル化（高いデッドゾーン）
+        let stickX = 0;
+        let stickY = 0;
+        if (Math.abs(gp.axes[0]) > SHORTCUT_DEADZONE) {
+            stickX = gp.axes[0] > 0 ? 1 : -1;
+        }
+        if (Math.abs(gp.axes[1]) > SHORTCUT_DEADZONE) {
+            stickY = gp.axes[1] > 0 ? -1 : 1;
+        }
 
-            // Pan (Left/Right)
-            if (gp.buttons[14].pressed && !this.lastButtonState[14]) {
-                track.pan = Math.max(-1.0, track.pan - 0.1);
-                this.app.audio.setTrackPan(this.app.currentTrackId, track.pan);
-                this.updateStatus(`Pan: ${track.pan.toFixed(1)}`);
-                this.startComboUsed = true;
-            }
-            if (gp.buttons[15].pressed && !this.lastButtonState[15]) {
-                track.pan = Math.min(1.0, track.pan + 0.1);
-                this.app.audio.setTrackPan(this.app.currentTrackId, track.pan);
-                this.updateStatus(`Pan: ${track.pan.toFixed(1)}`);
-                this.startComboUsed = true;
-            }
+        // エッジ検出
+        const stickXChanged = stickX !== this.lastStartStickState.x;
+        const stickYChanged = stickY !== this.lastStartStickState.y;
 
-            // Solo (A)
-            if (gp.buttons[0].pressed && !this.lastButtonState[0]) {
-                track.solo = !track.solo;
-                this.updateStatus(`Solo: ${track.solo ? 'ON' : 'OFF'}`);
-                this.startComboUsed = true;
-            }
+        // Volume (Up/Down) - スティックまたは十字キー
+        if ((isPressed(map.UP) && !this.lastButtonState[map.UP]) || (stickYChanged && stickY > 0)) {
+            track.volume = Math.min(1.0, track.volume + 0.05);
+            this.app.audio.setTrackVolume(this.app.currentTrackId, track.volume);
+            this.updateStatus(`Vol: ${track.volume.toFixed(2)}`);
+            this.startComboUsed = true;
+        }
+        if ((isPressed(map.DOWN) && !this.lastButtonState[map.DOWN]) || (stickYChanged && stickY < 0)) {
+            track.volume = Math.max(0, track.volume - 0.05);
+            this.app.audio.setTrackVolume(this.app.currentTrackId, track.volume);
+            this.updateStatus(`Vol: ${track.volume.toFixed(2)}`);
+            this.startComboUsed = true;
+        }
 
-            // Mute (B)
-            if (gp.buttons[1].pressed && !this.lastButtonState[1]) {
-                track.muted = !track.muted;
-                this.updateStatus(`Mute: ${track.muted ? 'ON' : 'OFF'}`);
-                this.startComboUsed = true;
+        // Pan (Left/Right) - スティックまたは十字キー
+        if ((isPressed(map.LEFT) && !this.lastButtonState[map.LEFT]) || (stickXChanged && stickX < 0)) {
+            track.pan = Math.max(-1.0, track.pan - 0.1);
+            this.app.audio.setTrackPan(this.app.currentTrackId, track.pan);
+            this.updateStatus(`Pan: ${track.pan.toFixed(1)}`);
+            this.startComboUsed = true;
+        }
+        if ((isPressed(map.RIGHT) && !this.lastButtonState[map.RIGHT]) || (stickXChanged && stickX > 0)) {
+            track.pan = Math.min(1.0, track.pan + 0.1);
+            this.app.audio.setTrackPan(this.app.currentTrackId, track.pan);
+            this.updateStatus(`Pan: ${track.pan.toFixed(1)}`);
+            this.startComboUsed = true;
+        }
+
+        // Solo (A)
+        if (isPressed(map.A) && !this.lastButtonState[map.A]) {
+            track.solo = !track.solo;
+            this.updateStatus(`Solo: ${track.solo ? 'ON' : 'OFF'}`);
+            this.startComboUsed = true;
+        }
+
+        // Mute (B)
+        if (isPressed(map.B) && !this.lastButtonState[map.B]) {
+            track.muted = !track.muted;
+            this.updateStatus(`Mute: ${track.muted ? 'ON' : 'OFF'}`);
+            this.startComboUsed = true;
+        }
+
+        // Start+スティックの状態を保存
+        this.lastStartStickState.x = stickX;
+        this.lastStartStickState.y = stickY;
+
+    } else {
+        // Startを離した時、状態をリセット
+        this.lastStartStickState.x = 0;
+        this.lastStartStickState.y = 0;
+
+        if (this.wasStartButtonHeld) {
+            if (!this.startComboUsed) {
+                this.app.currentTrackId = (this.app.currentTrackId + 1) % 8;
+                this.updateStatus(`Track: ${this.app.currentTrackId + 1}`);
+                if (this.app.updateTrackUI) this.app.updateTrackUI();
             }
-        } else {
-            if (this.wasStartButtonHeld) {
-                if (!this.startComboUsed) {
-                    this.app.currentTrackId = (this.app.currentTrackId + 1) % 8;
-                    this.updateStatus(`Track: ${this.app.currentTrackId + 1}`);
-                    if (this.app.updateTrackUI) this.app.updateTrackUI();
-                }
-                this.startComboUsed = false;
-            }
+            this.startComboUsed = false;
+        }
 
             if (r2Pressed) {
-            // Grid Shortcuts
-            if (gp.buttons[14].pressed && !this.lastButtonState[14]) {
-                let div = this.app.ui.gridDivisions;
-                if (div < 64) this.app.ui.setGridDivisions(div * 2);
+            // グリッドショートカット用：高いデッドゾーンでデジタル化
+            let stickX = 0;
+            if (Math.abs(gp.axes[0]) > SHORTCUT_DEADZONE) {
+                stickX = gp.axes[0] > 0 ? 1 : -1;
             }
-            if (gp.buttons[15].pressed && !this.lastButtonState[15]) {
+            
+            // エッジ検出：前回と違う場合のみ反応
+            const stickXChanged = stickX !== this.lastR2StickState.x;
+            
+            // Grid Shortcuts - スティックまたは十字キー
+            if ((isPressed(map.LEFT) && !this.lastButtonState[map.LEFT]) || (stickXChanged && stickX > 0)) {
                 let div = this.app.ui.gridDivisions;
                 if (div > 2) this.app.ui.setGridDivisions(div / 2);
             }
-            } else {
-            // Normal D-Pad
-            if (gp.buttons[14].pressed) dx = -1;
-            if (gp.buttons[15].pressed) dx = 1;
+            if ((isPressed(map.RIGHT) && !this.lastButtonState[map.RIGHT]) || (stickXChanged && stickX < 0)) {
+                let div = this.app.ui.gridDivisions;
+                if (div < 32) this.app.ui.setGridDivisions(div * 2);
             }
+            
+            // R2+スティックの状態を保存
+            this.lastR2StickState.x = stickX;
+            
+            // R2を押している間は通常の左右移動を無効化
+            dx = 0;
+        } else {
+            // R2を離した時、状態をリセット
+            this.lastR2StickState.x = 0;
+            
+            // 通常のスティック操作（連続入力OK、低いデッドゾーン）
+            // Normal D-Pad
+            if (isPressed(map.LEFT)) dx = -1;
+            if (isPressed(map.RIGHT)) dx = 1;
         }
+    }
 
-        // Left Stick
+    // Left Stick（通常操作時のみ、連続入力可能）
+    if (!startButtonHeld && !r2Pressed) {
         if (Math.abs(gp.axes[0]) > DEADZONE) dx = gp.axes[0] > 0 ? 1 : -1;
         if (Math.abs(gp.axes[1]) > DEADZONE) dy = gp.axes[1] > 0 ? -1 : 1;
-
-        if (startButtonHeld) {
-            dx = 0;
-            dy = 0;
-        }
-        if (Math.abs(gp.axes[1]) > DEADZONE) dy = gp.axes[1] > 0 ? -1 : 1;
+    }
 
         // Y Button: Selection Mode
         if (yButtonHeld) {
@@ -235,8 +293,8 @@ export class InputManager {
 
             // Move cursor and update range selection
             if (this.state.selectionStart) {
-                this.processMovement('x', dx);
-                this.processMovement('y', dy);
+                this.processMovement('x', dx, 'grid');
+                this.processMovement('y', dy, 'semitone');
                 this.updateRangeSelection();
             }
 
@@ -285,6 +343,7 @@ export class InputManager {
     }
 
     handleButtons(gp, dx, dy, suppressActions = false, selectButtonHeld = false) {
+        const map = this.buttonMap;
         // Helper for button down
         const isDown = (i) => gp.buttons[i] && gp.buttons[i].pressed;
         const wasDown = (i) => this.lastButtonState[i];
@@ -292,7 +351,7 @@ export class InputManager {
         try {
             if (!suppressActions) {
             // Button 0 (A/Cross): Copy selection, Paste, or Place Note
-            if (isDown(0) && !wasDown(0) && dx === 0 && dy === 0) {
+            if (isDown(map.A) && !wasDown(map.A) && dx === 0 && dy === 0) {
                 if (this.state.hasSelection) {
                     this.copySelection();
                 } else if (this.state.clipboard) {
@@ -303,12 +362,12 @@ export class InputManager {
             }
 
             // Button 2 (X/Square): Play from cursor position
-            if (isDown(2) && !wasDown(2)) {
+            if (isDown(map.X) && !wasDown(map.X)) {
                 this.playFromCursor();
             }
 
             // Button 1 (B/Circle): Delete selection or Clear Clipboard
-            if (isDown(1) && !wasDown(1)) {
+            if (isDown(map.B) && !wasDown(map.B)) {
                 if (this.state.hasSelection) {
                     this.deleteSelectedNotes();
                 } else if (this.state.clipboard) {
@@ -318,7 +377,7 @@ export class InputManager {
             }
 
             // Button 8 (Select): Set Loop / Toggle Loop
-            if (isDown(8) && !wasDown(8)) {
+            if (isDown(map.SELECT) && !wasDown(map.SELECT)) {
                 if (this.state.hasSelection && this.state.selectedNotes.length > 0) {
                     // Set Loop to Selection
                     let minTime = Infinity;
