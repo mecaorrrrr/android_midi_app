@@ -110,6 +110,13 @@ export class UIManager {
         // Draw Grid
         this.drawGrid();
 
+        // Draw Ghost Notes (Other tracks)
+        this.app.songData.tracks.forEach(track => {
+            if (track.id !== this.app.currentTrackId && !track.muted) {
+                this.drawGhostNotes(track.notes);
+            }
+        });
+
         // Draw Selection Range (if selecting)
         if (selectionStart && inputState.cursor) {
             this.drawSelectionRange(selectionStart, inputState.cursor);
@@ -141,9 +148,6 @@ export class UIManager {
 
         // Draw Ruler Overlay
         this.drawRuler();
-
-        // Draw Timeline View Overlay
-        this.drawTimeline();
     }
 
     drawSelectionRange(start, end) {
@@ -199,6 +203,24 @@ export class UIManager {
             }
 
             this.ctx.lineWidth = isSelected ? 2 : 1;
+            this.ctx.fillRect(x + 1, y + 1, w - 2, this.keyHeight - 2);
+            this.ctx.strokeRect(x + 1, y + 1, w - 2, this.keyHeight - 2);
+        }
+    }
+
+    drawGhostNotes(notes) {
+        this.ctx.fillStyle = 'rgba(120, 120, 120, 0.2)';
+        this.ctx.strokeStyle = 'rgba(150, 150, 150, 0.3)';
+        this.ctx.lineWidth = 1;
+
+        for (const note of notes) {
+            const x = note.time * this.beatWidth - this.scrollX + this.pianoKeyWidth;
+            const y = (127 - note.pitch) * this.keyHeight - this.scrollY;
+
+            if (x + this.beatWidth < 0 || x > this.width || y + this.keyHeight < 0 || y > this.height) continue;
+
+            const w = (note.duration || 1) * this.beatWidth;
+
             this.ctx.fillRect(x + 1, y + 1, w - 2, this.keyHeight - 2);
             this.ctx.strokeRect(x + 1, y + 1, w - 2, this.keyHeight - 2);
         }
@@ -461,62 +483,5 @@ export class UIManager {
         this.ctx.moveTo(this.pianoKeyWidth, 0);
         this.ctx.lineTo(this.pianoKeyWidth, this.height);
         this.ctx.stroke();
-    }
-
-    drawTimeline() {
-        // Floating Timeline View at bottom
-        const timelineHeight = 120;
-        const yStart = this.height - timelineHeight;
-
-        // Background
-        this.ctx.fillStyle = 'rgba(20, 20, 20, 0.95)';
-        this.ctx.fillRect(0, yStart, this.width, timelineHeight);
-
-        // Border
-        this.ctx.strokeStyle = '#444';
-        this.ctx.beginPath();
-        this.ctx.moveTo(0, yStart);
-        this.ctx.lineTo(this.width, yStart);
-        this.ctx.stroke();
-
-        const trackHeight = timelineHeight / 8;
-
-        this.app.songData.tracks.forEach((track, i) => {
-            const y = yStart + i * trackHeight;
-            const isSelected = (i === this.app.currentTrackId);
-
-            // Track Background Highlight
-            if (isSelected) {
-                this.ctx.fillStyle = 'rgba(255, 255, 255, 0.1)';
-                this.ctx.fillRect(0, y, this.width, trackHeight);
-            }
-
-            // Track Info (Left)
-            this.ctx.fillStyle = isSelected ? '#fff' : '#aaa';
-            this.ctx.font = '10px monospace';
-            this.ctx.textAlign = 'left';
-            this.ctx.fillText(`T${i + 1} Vol:${track.volume.toFixed(2)} Pan:${track.pan.toFixed(1)}`, 5, y + trackHeight - 4);
-
-            // Mini-notes (Right side - Map beat to pixel)
-            // Let's use same scale as main view for horizontal, but offset by scroll?
-            // "Piano roll down view" - usually aligns with main view time
-
-            this.ctx.fillStyle = isSelected ? '#00cec9' : '#636e72';
-
-            for (const note of track.notes) {
-                const x = note.time * this.beatWidth - this.scrollX;
-                if (x + this.beatWidth < 0 || x > this.width) continue;
-
-                // Draw small rect
-                this.ctx.fillRect(x, y + 2, Math.max(2, (note.duration || 1) * this.beatWidth), trackHeight - 4);
-            }
-
-            // Separator
-            this.ctx.strokeStyle = '#333';
-            this.ctx.beginPath();
-            this.ctx.moveTo(0, y + trackHeight);
-            this.ctx.lineTo(this.width, y + trackHeight);
-            this.ctx.stroke();
-        });
     }
 }
