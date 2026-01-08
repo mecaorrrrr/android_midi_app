@@ -372,6 +372,22 @@ export class UIManager {
         this.ctx.lineTo(this.width, this.headerHeight);
         this.ctx.stroke();
 
+        // Draw Loop Marker
+        if (this.app.loopRegion) {
+            const startX = this.app.loopRegion.start * this.beatWidth - this.scrollX + this.pianoKeyWidth;
+            const endX = this.app.loopRegion.end * this.beatWidth - this.scrollX + this.pianoKeyWidth;
+            const width = endX - startX;
+
+            if (endX > this.pianoKeyWidth && startX < this.width) {
+                this.ctx.fillStyle = this.app.isLooping ? 'rgba(0, 206, 201, 0.3)' : 'rgba(30, 39, 46, 0.5)';
+                this.ctx.fillRect(Math.max(this.pianoKeyWidth, startX), 0, width, this.headerHeight);
+                
+                this.ctx.strokeStyle = this.app.isLooping ? '#00cec9' : '#555';
+                this.ctx.lineWidth = 2;
+                this.ctx.strokeRect(Math.max(this.pianoKeyWidth, startX), 0, width, this.headerHeight);
+            }
+        }
+
         // Draw Ruler Info
         const startBeat = Math.floor(this.scrollX / this.beatWidth);
         const endBeat = startBeat + Math.ceil(this.width / this.beatWidth) + 1;

@@ -21,6 +21,9 @@ class App {
                 presetIndex: 0
             }))
         };
+        this.undoStack = [];
+        this.redoStack = [];
+
         this.currentTrackId = 0;
 
         this.transport = new TransportManager(this);
@@ -39,14 +42,10 @@ class App {
         }, { once: true });
 
         // File Loading
-        const btnLoad = document.getElementById('btn-load-sfz');
-        const fileInput = document.getElementById('sfz-file-input');
+        this.setupFileMenu();
 
-        btnLoad.addEventListener('click', () => {
-            fileInput.click();
-        });
-
-        fileInput.addEventListener('change', async (e) => {
+        // SFZ Input
+        document.getElementById('sfz-file-input').addEventListener('change', async (e) => {
             if (e.target.files.length > 0) {
                 document.getElementById('status-display').textContent = "Loading SFZ...";
                 const success = await this.audio.loadSFZ(e.target.files);
@@ -59,15 +58,7 @@ class App {
         });
 
         // SF2 File Loading
-        const btnLoadSF2 = document.getElementById('btn-load-sf2');
-        const sf2Input = document.getElementById('sf2-file-input');
-        const presetSelector = document.getElementById('preset-selector');
-
-        btnLoadSF2.addEventListener('click', () => {
-            sf2Input.click();
-        });
-
-        sf2Input.addEventListener('change', async (e) => {
+        document.getElementById('sf2-file-input').addEventListener('change', async (e) => {
             if (e.target.files.length > 0) {
                 document.getElementById('status-display').textContent = "Loading SF2...";
                 const success = await this.audio.loadSF2(e.target.files[0]);
@@ -81,7 +72,7 @@ class App {
             }
         });
 
-        presetSelector.addEventListener('change', (e) => {
+        document.getElementById('preset-selector').addEventListener('change', (e) => {
             const idx = parseInt(e.target.value);
             if (!isNaN(idx) && idx >= 0) {
                 const presets = this.audio.getPresets();
@@ -106,14 +97,7 @@ class App {
             }
         });
 
-        document.getElementById('btn-save').addEventListener('click', () => {
-            this.saveProject();
-        });
-
-        const loadBtn = document.getElementById('btn-load');
-        const fileInputProject = document.getElementById('file-input-project');
-        loadBtn.addEventListener('click', () => fileInputProject.click());
-        fileInputProject.addEventListener('change', (e) => {
+        document.getElementById('file-input-project').addEventListener('change', (e) => {
             if (e.target.files.length > 0) {
                 this.loadProject(e.target.files[0]);
             }
@@ -155,35 +139,170 @@ class App {
             }
         });
 
-        document.getElementById('btn-export').addEventListener('click', () => {
-            this.exportMIDI();
-        });
-
         // Transport
         this.cardinalTime = 0;
         this.playbackStartTime = 0;
         this.isPlaying = false;
         this.bpm = 120;
-
-        document.getElementById('btn-play').addEventListener('click', () => {
-            if (!this.isPlaying) {
-                this.playbackStartTime = this.cardinalTime;
-            }
-            this.isPlaying = true;
-            this.audio.resume();
-        });
-
-        document.getElementById('btn-stop').addEventListener('click', () => {
-            this.isPlaying = false;
-            this.cardinalTime = this.playbackStartTime;
-        });
+        this.loopRegion = null; // { start: 0, end: 4 }
+        this.isLooping = false;
 
         this.loop = this.loop.bind(this);
         requestAnimationFrame(this.loop);
     }
 
+    saveState() {
+        // Deep copy songData for history
+        try {
+            const state = JSON.stringify(this.songData);
+            this.undoStack.push(state);
+            // Limit stack size
+            if (this.undoStack.length > 50) this.undoStack.shift();
+            this.redoStack = []; // Clear redo on new action
+        } catch (e) {
+            console.error("Failed to save state", e);
+        }
+    }
+
+    undo() {
+        if (this.undoStack.length === 0) {
+            this.showToast("Nothing to Undo");
+            return;
+        }
+
+        // Save current state to redo
+        this.redoStack.push(JSON.stringify(this.songData));
+
+        const prevState = this.undoStack.pop();
+        this.songData = JSON.parse(prevState);
+        this.input.clearSelection(); // Clear selection to avoid invalid references
+
+        this.showToast("Undo");
+    }
+
+    redo() {
+        if (this.redoStack.length === 0) {
+            this.showToast("Nothing to Redo");
+            return;
+        }
+
+        this.undoStack.push(JSON.stringify(this.songData));
+
+        const nextState = this.redoStack.pop();
+        this.songData = JSON.parse(nextState);
+        this.input.clearSelection();
+
+        this.showToast("Redo");
+    }
+
+    showToast(message) {
+        let toast = document.getElementById('toast-notification');
+        if (!toast) {
+            toast = document.createElement('div');
+            toast.id = 'toast-notification';
+            Object.assign(toast.style, {
+                position: 'fixed',
+                bottom: '100px',
+                left: '50%',
+                transform: 'translateX(-50%)',
+                backgroundColor: 'rgba(45, 52, 54, 0.9)',
+                color: '#fff',
+                padding: '10px 20px',
+                borderRadius: '20px',
+                zIndex: '2000',
+                transition: 'opacity 0.3s',
+                pointerEvents: 'none',
+                opacity: '0'
+            });
+            document.body.appendChild(toast);
+        }
+        toast.textContent = message;
+        toast.style.opacity = '1';
+        if (this.toastTimer) clearTimeout(this.toastTimer);
+        this.toastTimer = setTimeout(() => {
+            toast.style.opacity = '0';
+        }, 1500);
+    }
+
     resize() {
         this.ui.resize();
+    }
+
+    setupFileMenu() {
+        // Hide legacy buttons
+        const ids = ['btn-play', 'btn-stop', 'btn-save', 'btn-load', 'btn-export', 'btn-load-sfz', 'btn-load-sf2'];
+        ids.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.style.display = 'none';
+        });
+
+        // Create Container for Menu if not exists
+        let menuContainer = document.getElementById('menu-container');
+        if (!menuContainer) {
+            const status = document.getElementById('status-display');
+            if (status && status.parentElement) {
+                menuContainer = document.createElement('div');
+                menuContainer.id = 'menu-container';
+                menuContainer.style.display = 'inline-block';
+                menuContainer.style.marginRight = '10px';
+                status.parentElement.insertBefore(menuContainer, status);
+            } else {
+                menuContainer = document.body;
+            }
+        }
+
+        // FILE Button
+        const fileBtn = document.createElement('button');
+        fileBtn.textContent = 'FILE';
+        fileBtn.className = 'control-btn'; // Use existing class if available
+        fileBtn.style.fontWeight = 'bold';
+        
+        // Ribbon (Dropdown)
+        const ribbon = document.createElement('div');
+        ribbon.style.display = 'none';
+        ribbon.style.position = 'absolute';
+        ribbon.style.backgroundColor = '#2d3436';
+        ribbon.style.border = '1px solid #555';
+        ribbon.style.padding = '5px';
+        ribbon.style.zIndex = '1000';
+        ribbon.style.flexDirection = 'column';
+        ribbon.style.gap = '5px';
+        ribbon.style.minWidth = '120px';
+        ribbon.style.borderRadius = '4px';
+
+        fileBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const isVisible = ribbon.style.display === 'flex';
+            ribbon.style.display = isVisible ? 'none' : 'flex';
+            
+            const rect = fileBtn.getBoundingClientRect();
+            ribbon.style.top = `${rect.bottom + window.scrollY + 5}px`;
+            ribbon.style.left = `${rect.left + window.scrollX}px`;
+        });
+
+        document.addEventListener('click', () => {
+            ribbon.style.display = 'none';
+        });
+
+        const addMenuItem = (text, onClick) => {
+            const item = document.createElement('button');
+            item.textContent = text;
+            item.className = 'control-btn';
+            item.style.width = '100%';
+            item.style.textAlign = 'left';
+            item.style.marginBottom = '2px';
+            item.addEventListener('click', onClick);
+            ribbon.appendChild(item);
+        };
+
+        addMenuItem('Save', () => this.saveProject());
+        addMenuItem('Load', () => document.getElementById('file-input-project').click());
+        addMenuItem('Export MIDI', () => this.exportMIDI());
+        addMenuItem('SFZ', () => document.getElementById('sfz-file-input').click());
+        addMenuItem('SF2', () => document.getElementById('sf2-file-input').click());
+
+        menuContainer.appendChild(fileBtn);
+        document.body.appendChild(ribbon);
     }
 
     validateTracksAgainstSF2() {
@@ -256,10 +375,28 @@ class App {
             const currentBpm = this.transport.getBpmAt(this.cardinalTime);
             const beatsPerSecond = currentBpm / 60;
             const advance = beatsPerSecond * deltaTime;
-            const previousTime = this.cardinalTime;
-            this.cardinalTime += advance;
+            
+            let nextTime = this.cardinalTime + advance;
 
-            this.checkAndPlayNotes(previousTime, this.cardinalTime);
+            if (this.isLooping && this.loopRegion) {
+                if (nextTime >= this.loopRegion.end) {
+                    // Play until end of loop
+                    this.checkAndPlayNotes(this.cardinalTime, this.loopRegion.end);
+                    
+                    // Loop back
+                    const remainder = nextTime - this.loopRegion.end;
+                    this.cardinalTime = this.loopRegion.start + remainder;
+                    
+                    // Play from start of loop
+                    this.checkAndPlayNotes(this.loopRegion.start, this.cardinalTime);
+                } else {
+                    this.checkAndPlayNotes(this.cardinalTime, nextTime);
+                    this.cardinalTime = nextTime;
+                }
+            } else {
+                this.checkAndPlayNotes(this.cardinalTime, nextTime);
+                this.cardinalTime = nextTime;
+            }
         }
 
         this.ui.draw(this.input.state, this.cardinalTime);

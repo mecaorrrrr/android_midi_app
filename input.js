@@ -22,6 +22,8 @@ export class InputManager {
 
         this.lastButtonState = [];
         this.wasYButtonHeld = false; // Track Y button state for release detection
+        this.wasStartButtonHeld = false;
+        this.startComboUsed = false;
 
 
         // Timing for repeat
@@ -113,57 +115,83 @@ export class InputManager {
         const aButtonHeld = gp.buttons[0] && gp.buttons[0].pressed;
         const bButtonHeld = gp.buttons[1] && gp.buttons[1].pressed;
         const yButtonHeld = gp.buttons[3] && gp.buttons[3].pressed; // Y/Triangle button
-        const l1Pressed = gp.buttons[7] && gp.buttons[7].pressed;
-        const r1Pressed = gp.buttons[6] && gp.buttons[6].pressed;
+        const l1Pressed = gp.buttons[4] && gp.buttons[4].pressed;
+        const r1Pressed = gp.buttons[5] && gp.buttons[5].pressed;
+        const l2Pressed = gp.buttons[6] && gp.buttons[6].pressed;
+        const r2Pressed = gp.buttons[7] && gp.buttons[7].pressed;
+        const startButtonHeld = gp.buttons[9] && gp.buttons[9].pressed;
+        const selectButtonHeld = gp.buttons[8] && gp.buttons[8].pressed;
 
         // D-Pad
         if (gp.buttons[12].pressed) dy = 1; // Up
         if (gp.buttons[13].pressed) dy = -1; // Down
 
-        if (bButtonHeld) {
-            try {
-                // Track Switch
-                if (gp.buttons[12].pressed && !this.lastButtonState[12]) {
+        // Undo / Redo (L1 / R1)
+        if (l1Pressed && !this.lastButtonState[4]) {
+            this.app.undo();
+        }
+        if (r1Pressed && !this.lastButtonState[5]) {
+            this.app.redo();
+        }
+
+        if (startButtonHeld) {
+            dx = 0;
+            dy = 0;
+
+            const track = this.app.songData.tracks[this.app.currentTrackId];
+
+            // Volume (Up/Down)
+            if (gp.buttons[12].pressed && !this.lastButtonState[12]) {
+                track.volume = Math.min(1.0, track.volume + 0.05);
+                this.app.audio.setTrackVolume(this.app.currentTrackId, track.volume);
+                this.updateStatus(`Vol: ${track.volume.toFixed(2)}`);
+                this.startComboUsed = true;
+            }
+            if (gp.buttons[13].pressed && !this.lastButtonState[13]) {
+                track.volume = Math.max(0, track.volume - 0.05);
+                this.app.audio.setTrackVolume(this.app.currentTrackId, track.volume);
+                this.updateStatus(`Vol: ${track.volume.toFixed(2)}`);
+                this.startComboUsed = true;
+            }
+
+            // Pan (Left/Right)
+            if (gp.buttons[14].pressed && !this.lastButtonState[14]) {
+                track.pan = Math.max(-1.0, track.pan - 0.1);
+                this.app.audio.setTrackPan(this.app.currentTrackId, track.pan);
+                this.updateStatus(`Pan: ${track.pan.toFixed(1)}`);
+                this.startComboUsed = true;
+            }
+            if (gp.buttons[15].pressed && !this.lastButtonState[15]) {
+                track.pan = Math.min(1.0, track.pan + 0.1);
+                this.app.audio.setTrackPan(this.app.currentTrackId, track.pan);
+                this.updateStatus(`Pan: ${track.pan.toFixed(1)}`);
+                this.startComboUsed = true;
+            }
+
+            // Solo (A)
+            if (gp.buttons[0].pressed && !this.lastButtonState[0]) {
+                track.solo = !track.solo;
+                this.updateStatus(`Solo: ${track.solo ? 'ON' : 'OFF'}`);
+                this.startComboUsed = true;
+            }
+
+            // Mute (B)
+            if (gp.buttons[1].pressed && !this.lastButtonState[1]) {
+                track.muted = !track.muted;
+                this.updateStatus(`Mute: ${track.muted ? 'ON' : 'OFF'}`);
+                this.startComboUsed = true;
+            }
+        } else {
+            if (this.wasStartButtonHeld) {
+                if (!this.startComboUsed) {
                     this.app.currentTrackId = (this.app.currentTrackId + 1) % 8;
                     this.updateStatus(`Track: ${this.app.currentTrackId + 1}`);
                     if (this.app.updateTrackUI) this.app.updateTrackUI();
                 }
-                if (gp.buttons[13].pressed && !this.lastButtonState[13]) {
-                    this.app.currentTrackId = (this.app.currentTrackId - 1 + 8) % 8;
-                    this.updateStatus(`Track: ${this.app.currentTrackId + 1}`);
-                    if (this.app.updateTrackUI) this.app.updateTrackUI();
-                }
-
-                const track = this.app.songData.tracks[this.app.currentTrackId];
-
-                // Volume (Left/Right)
-                if (gp.buttons[14].pressed && !this.lastButtonState[14]) {
-                    track.volume = Math.max(0, track.volume - 0.05);
-                    this.app.audio.setTrackVolume(this.app.currentTrackId, track.volume);
-                    this.updateStatus(`Vol: ${track.volume.toFixed(2)}`);
-                }
-                if (gp.buttons[15].pressed && !this.lastButtonState[15]) {
-                    track.volume = Math.min(1.0, track.volume + 0.05);
-                    this.app.audio.setTrackVolume(this.app.currentTrackId, track.volume);
-                    this.updateStatus(`Vol: ${track.volume.toFixed(2)}`);
-                }
-
-                // Pan (L1/R1)
-                if (l1Pressed && !this.lastButtonState[4]) {
-                    track.pan = Math.max(-1.0, track.pan - 0.1);
-                    this.app.audio.setTrackPan(this.app.currentTrackId, track.pan);
-                    this.updateStatus(`Pan: ${track.pan.toFixed(1)}`);
-                }
-                if (r1Pressed && !this.lastButtonState[5]) {
-                    track.pan = Math.min(1.0, track.pan + 0.1);
-                    this.app.audio.setTrackPan(this.app.currentTrackId, track.pan);
-                    this.updateStatus(`Pan: ${track.pan.toFixed(1)}`);
-                }
-
-            } catch (e) {
-                console.error("Error in shortcuts:", e);
+                this.startComboUsed = false;
             }
-        } else if (r1Pressed) {
+
+            if (r2Pressed) {
             // Grid Shortcuts
             if (gp.buttons[14].pressed && !this.lastButtonState[14]) {
                 let div = this.app.ui.gridDivisions;
@@ -173,18 +201,18 @@ export class InputManager {
                 let div = this.app.ui.gridDivisions;
                 if (div > 2) this.app.ui.setGridDivisions(div / 2);
             }
-        } else {
+            } else {
             // Normal D-Pad
             if (gp.buttons[14].pressed) dx = -1;
             if (gp.buttons[15].pressed) dx = 1;
+            }
         }
 
         // Left Stick
         if (Math.abs(gp.axes[0]) > DEADZONE) dx = gp.axes[0] > 0 ? 1 : -1;
         if (Math.abs(gp.axes[1]) > DEADZONE) dy = gp.axes[1] > 0 ? -1 : 1;
 
-        // CRITICAL FIX: Suppress ALL cursor movement if B button (shortcuts) is held
-        if (bButtonHeld) {
+        if (startButtonHeld) {
             dx = 0;
             dy = 0;
         }
@@ -194,21 +222,29 @@ export class InputManager {
         if (yButtonHeld) {
             // Start selection if just pressed
             if (!this.wasYButtonHeld) {
-                this.state.selectionStart = {
-                    time: this.state.cursor.time,
-                    pitch: this.state.cursor.pitch
-                };
-                this.state.selectedNotes = [];
+                if (this.state.hasSelection) {
+                    this.clearSelection();
+                } else {
+                    this.state.selectionStart = {
+                        time: this.state.cursor.time,
+                        pitch: this.state.cursor.pitch
+                    };
+                    this.state.selectedNotes = [];
+                }
             }
 
             // Move cursor and update range selection
-            this.processMovement('x', dx);
-            this.processMovement('y', dy);
-            this.updateRangeSelection();
+            if (this.state.selectionStart) {
+                this.processMovement('x', dx);
+                this.processMovement('y', dy);
+                this.updateRangeSelection();
+            }
 
         } else if (this.wasYButtonHeld && !yButtonHeld) {
             // Y button just released - finalize selection
-            this.finalizeSelection();
+            if (this.state.selectionStart) {
+                this.finalizeSelection();
+            }
 
         } else if (this.state.hasSelection && (dx !== 0 || dy !== 0)) {
             // Have selection and moving - move selected notes
@@ -221,14 +257,19 @@ export class InputManager {
         } else {
             // Normal cursor movement
             // Check for L1 modifier for fast movement
-            const unitX = l1Pressed ? 'measure' : 'grid';
-            const unitY = l1Pressed ? 'octave' : 'semitone';
+            const unitX = l2Pressed ? 'measure' : 'grid';
+            const unitY = l2Pressed ? 'octave' : 'semitone';
 
             this.processMovement('x', dx, unitX);
             this.processMovement('y', dy, unitY);
         }
 
+        // Clear continuous action timers if not in use
+        if (!aButtonHeld) delete this.repeatTimers['note_length'];
+        if (!this.state.hasSelection) delete this.repeatTimers['move_selection'];
+
         this.wasYButtonHeld = yButtonHeld;
+        this.wasStartButtonHeld = startButtonHeld;
 
         // Buttons (Action)
         // 0: South (A/Cross) -> Place Note (only when no d-pad pressed)
@@ -236,19 +277,20 @@ export class InputManager {
         // 2: West (X/Square) -> Play/Stop
 
         // Edge detection for buttons
-        this.handleButtons(gp, dx, dy);
+        this.handleButtons(gp, dx, dy, startButtonHeld, selectButtonHeld);
 
         // Update UI info
         document.getElementById('time-val').textContent = this.state.cursor.time.toFixed(2);
         document.getElementById('pitch-val').textContent = this.midiToNoteName(this.state.cursor.pitch);
     }
 
-    handleButtons(gp, dx, dy) {
+    handleButtons(gp, dx, dy, suppressActions = false, selectButtonHeld = false) {
         // Helper for button down
         const isDown = (i) => gp.buttons[i] && gp.buttons[i].pressed;
         const wasDown = (i) => this.lastButtonState[i];
 
         try {
+            if (!suppressActions) {
             // Button 0 (A/Cross): Copy selection, Paste, or Place Note
             if (isDown(0) && !wasDown(0) && dx === 0 && dy === 0) {
                 if (this.state.hasSelection) {
@@ -265,11 +307,40 @@ export class InputManager {
                 this.playFromCursor();
             }
 
-            // Button 1 (B/Circle): Delete selection
+            // Button 1 (B/Circle): Delete selection or Clear Clipboard
             if (isDown(1) && !wasDown(1)) {
                 if (this.state.hasSelection) {
                     this.deleteSelectedNotes();
+                } else if (this.state.clipboard) {
+                    this.state.clipboard = null;
+                    this.updateStatus("Clipboard cleared");
                 }
+            }
+
+            // Button 8 (Select): Set Loop / Toggle Loop
+            if (isDown(8) && !wasDown(8)) {
+                if (this.state.hasSelection && this.state.selectedNotes.length > 0) {
+                    // Set Loop to Selection
+                    let minTime = Infinity;
+                    let maxEnd = -Infinity;
+                    
+                    this.state.selectedNotes.forEach(n => {
+                        if (n.time < minTime) minTime = n.time;
+                        const end = n.time + (n.duration || 0);
+                        if (end > maxEnd) maxEnd = end;
+                    });
+
+                    if (minTime !== Infinity) {
+                        this.app.loopRegion = { start: minTime, end: maxEnd };
+                        this.app.isLooping = true;
+                        this.app.showToast(`Loop Set: ${minTime.toFixed(1)} - ${maxEnd.toFixed(1)}`);
+                    }
+                } else {
+                    // Toggle Loop
+                    this.app.isLooping = !this.app.isLooping;
+                    this.app.showToast(this.app.isLooping ? "Loop ON" : "Loop OFF");
+                }
+            }
             }
 
             // ... (Other button checks handled in update() or previous logic?) 
@@ -301,19 +372,16 @@ export class InputManager {
 
         // Find the bounding box of the selection to use as anchor
         let minTime = Infinity;
-        let minPitch = Infinity;
 
         this.state.selectedNotes.forEach(n => {
             if (n.time < minTime) minTime = n.time;
-            if (n.pitch < minPitch) minPitch = n.pitch;
         });
 
         const refTime = minTime;
-        const refPitch = minPitch;
 
         this.state.clipboard = this.state.selectedNotes.map(n => ({
             deltaTime: n.time - refTime,
-            deltaPitch: n.pitch - refPitch,
+            pitch: n.pitch,
             duration: n.duration,
             velocity: n.velocity
         }));
@@ -326,27 +394,27 @@ export class InputManager {
 
     pasteClipboard() {
         if (!this.state.clipboard) return;
+        this.app.saveState();
 
         const track = this.app.songData.tracks[this.app.currentTrackId];
         const refTime = this.state.cursor.time;
-        const refPitch = this.state.cursor.pitch;
 
         const newNotes = this.state.clipboard.map(n => ({
             time: Math.max(0, refTime + n.deltaTime),
-            pitch: Math.max(0, Math.min(127, refPitch + n.deltaPitch)),
+            pitch: n.pitch,
             duration: n.duration,
             velocity: n.velocity
         }));
 
         track.notes.push(...newNotes);
         
-        // Consume clipboard to return to normal mode (allows placing single notes next)
-        this.state.clipboard = null;
+        // Keep clipboard for continuous pasting
         this.updateStatus(`Pasted ${newNotes.length} notes`);
     }
 
     deleteSelectedNotes() {
         if (!this.state.hasSelection) return;
+        this.app.saveState();
 
         const track = this.app.songData.tracks[this.app.currentTrackId];
         track.notes = track.notes.filter(n => !this.state.selectedNotes.includes(n));
@@ -357,6 +425,7 @@ export class InputManager {
 
     placeNote() {
         try {
+            this.app.saveState();
             const { time, pitch } = this.state.cursor;
 
             if (!this.app.songData || !this.app.songData.tracks) {
@@ -424,6 +493,7 @@ export class InputManager {
             const step = 4 / this.app.ui.gridDivisions; // Change by grid step
 
             if (!this.repeatTimers[key]) {
+                this.app.saveState();
                 note.duration += dx > 0 ? step : -step;
                 if (note.duration < step) note.duration = step;
                 this.lastNoteDuration = note.duration;
@@ -507,6 +577,7 @@ export class InputManager {
         };
 
         if (!this.repeatTimers[key]) {
+            this.app.saveState();
             doMove();
             this.repeatTimers[key] = { start: now, lastInfo: now };
         } else {
@@ -539,7 +610,11 @@ export class InputManager {
             }
             this.app.audio.resume();
 
-            this.app.cardinalTime = this.state.cursor.time;
+            if (this.app.isLooping && this.app.loopRegion) {
+                this.app.cardinalTime = this.app.loopRegion.start;
+            } else {
+                this.app.cardinalTime = this.state.cursor.time;
+            }
             this.app.playbackStartTime = this.app.cardinalTime;
             this.app.isPlaying = true;
         }
