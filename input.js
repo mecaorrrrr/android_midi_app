@@ -4,6 +4,8 @@ export class InputManager {
         this.gamepads = {};
         this.activeGamepadIndex = null;
 
+        this.lastNoteDuration = null;
+
         // State
         this.state = {
             cursor: {
@@ -111,8 +113,8 @@ export class InputManager {
         const aButtonHeld = gp.buttons[0] && gp.buttons[0].pressed;
         const bButtonHeld = gp.buttons[1] && gp.buttons[1].pressed;
         const yButtonHeld = gp.buttons[3] && gp.buttons[3].pressed; // Y/Triangle button
-        const l1Pressed = gp.buttons[4] && gp.buttons[4].pressed;
-        const r1Pressed = gp.buttons[5] && gp.buttons[5].pressed;
+        const l1Pressed = gp.buttons[7] && gp.buttons[7].pressed;
+        const r1Pressed = gp.buttons[6] && gp.buttons[6].pressed;
 
         // D-Pad
         if (gp.buttons[12].pressed) dy = 1; // Up
@@ -386,8 +388,12 @@ export class InputManager {
                 // Duration should match current grid step? Or default 1?
                 // Let's use current grid step as duration default
                 // Guard against division by zero just in case
-                const divs = this.app.ui.gridDivisions || 4;
-                const duration = 4 / divs;
+                let duration = this.lastNoteDuration;
+                if (!duration) {
+                    const divs = this.app.ui.gridDivisions || 4;
+                    duration = 4 / divs;
+                }
+                this.lastNoteDuration = duration;
 
                 notes.push({ time, pitch, duration });
 
@@ -420,6 +426,7 @@ export class InputManager {
             if (!this.repeatTimers[key]) {
                 note.duration += dx > 0 ? step : -step;
                 if (note.duration < step) note.duration = step;
+                this.lastNoteDuration = note.duration;
                 this.repeatTimers[key] = { start: now, lastInfo: now };
             } else {
                 const timer = this.repeatTimers[key];
@@ -427,6 +434,7 @@ export class InputManager {
                     if (now - timer.lastInfo > NOTE_LENGTH_RATE) {
                         note.duration += dx > 0 ? step : -step;
                         if (note.duration < step) note.duration = step;
+                        this.lastNoteDuration = note.duration;
                         timer.lastInfo = now;
                     }
                 }
@@ -523,6 +531,7 @@ export class InputManager {
         // Toggle: if playing, stop. If stopped, play from cursor.
         if (this.app.isPlaying) {
             this.app.isPlaying = false;
+            this.app.cardinalTime = this.app.playbackStartTime;
         } else {
             // Ensure audio is initialized (required for first user gesture)
             if (!this.app.audio.ctx) {
@@ -531,6 +540,7 @@ export class InputManager {
             this.app.audio.resume();
 
             this.app.cardinalTime = this.state.cursor.time;
+            this.app.playbackStartTime = this.app.cardinalTime;
             this.app.isPlaying = true;
         }
     }

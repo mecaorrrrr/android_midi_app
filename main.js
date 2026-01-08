@@ -161,17 +161,21 @@ class App {
 
         // Transport
         this.cardinalTime = 0;
+        this.playbackStartTime = 0;
         this.isPlaying = false;
         this.bpm = 120;
 
         document.getElementById('btn-play').addEventListener('click', () => {
+            if (!this.isPlaying) {
+                this.playbackStartTime = this.cardinalTime;
+            }
             this.isPlaying = true;
             this.audio.resume();
         });
 
         document.getElementById('btn-stop').addEventListener('click', () => {
             this.isPlaying = false;
-            this.cardinalTime = 0;
+            this.cardinalTime = this.playbackStartTime;
         });
 
         this.loop = this.loop.bind(this);

@@ -1,0 +1,35 @@
+<html>
+    <center>
+        <canvas id="canvas" width="512" height="256" style="border:1px solid #000000; background-color: #000;"></canvas>
+<script>
+    const canvas = document.getElementById('canvas');
+    const context = canvas.getContext('2d');
+
+    function draw_text_center(text) {
+        context.fillStyle = "#fff";
+        context.font = '24px Consolas';
+        context.textAlign = 'left';
+        let text_w = context.measureText(text).width;
+        context.fillText(text, canvas.width/2-text_w/2, canvas.height/2);
+    }
+
+    function updateGamepadStatus() {
+        const gamepads = navigator.getGamepads();
+        const gamepad = gamepads[0];
+
+        if (gamepad) {
+            gamepad.buttons.forEach((button, index) => {
+                if (button.pressed) {
+                    context.clearRect(0,0,canvas.width, canvas.height);
+                    draw_text_center(`button ${index} pressed`);
+                }
+            });
+        }
+
+        requestAnimationFrame(updateGamepadStatus);
+    }
+
+    requestAnimationFrame(updateGamepadStatus);
+</script>
+</center>
+</html>

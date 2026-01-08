@@ -26,18 +26,36 @@ export class UIManager {
         // State
         this.cursorTime = 0; // In beats
         this.cursorPitch = 60; // MIDI Note Number (Middle C)
+        this.hasCursor = false;
+        this.pianoKeyWidth = 40;
     }
 
     setGridDivisions(divisions) {
+        const oldBeatWidth = this.beatWidth;
         this.gridDivisions = divisions;
 
         // Dynamic Scaling
         // Ensure minimal visibility for grid lines
         const step = 4 / divisions; // Beats per grid line
-        const MIN_PIXELS_PER_GRID = 30; // Minimum pixels between grid lines
+        const MIN_PIXELS_PER_GRID = 15; // Minimum pixels between grid lines
 
-        this.beatWidth = Math.max(50, MIN_PIXELS_PER_GRID / step);
-        console.log(`Grid: ${divisions}, BeatWidth: ${this.beatWidth}`);
+        // Exception: 1/16 grid uses 1/8 grid's scaling factor to maintain same measure width
+        let scalingDivisions = divisions;
+        if (divisions === 16) {
+            scalingDivisions = 8;
+        }
+        const scalingStep = 4 / scalingDivisions;
+
+        this.beatWidth = Math.max(50, MIN_PIXELS_PER_GRID / scalingStep);
+
+        // Adjust scrollX to keep cursor at the same screen position
+        if (this.hasCursor) {
+            const cursorTime = this.cursorTime;
+            this.scrollX += cursorTime * (this.beatWidth - oldBeatWidth);
+            if (this.scrollX < 0) this.scrollX = 0;
+        }
+
+        console.log(`Grid: ${divisions}, BeatWidth: ${this.beatWidth}, ScrollX: ${this.scrollX}`);
     }
 
     resize() {
@@ -65,6 +83,26 @@ export class UIManager {
         const selectedNotes = inputState ? inputState.selectedNotes || [] : [];
         const selectionStart = inputState ? inputState.selectionStart : null;
 
+        // Update local cursor state
+        if (inputState && inputState.cursor) {
+            this.hasCursor = true;
+            this.cursorTime = inputState.cursor.time;
+            this.cursorPitch = inputState.cursor.pitch;
+        } else {
+            this.hasCursor = false;
+        }
+
+        // Auto-scroll Playhead
+        if (this.app.isPlaying && playheadTime >= 0) {
+            const playheadScreenX = playheadTime * this.beatWidth - this.scrollX + this.pianoKeyWidth;
+            if (playheadScreenX > this.width) {
+                this.scrollX = playheadTime * this.beatWidth;
+            } else if (playheadScreenX < this.pianoKeyWidth) {
+                this.scrollX = playheadTime * this.beatWidth;
+            }
+            if (this.scrollX < 0) this.scrollX = 0;
+        }
+
         // Clear
         this.ctx.fillStyle = this.bgColor;
         this.ctx.fillRect(0, 0, this.width, this.height);
@@ -87,7 +125,7 @@ export class UIManager {
 
         // Draw Playhead
         if (playheadTime >= 0) {
-            const x = playheadTime * this.beatWidth - this.scrollX;
+            const x = playheadTime * this.beatWidth - this.scrollX + this.pianoKeyWidth;
             if (x >= 0 && x <= this.width) {
                 this.ctx.strokeStyle = '#0984e3';
                 this.ctx.lineWidth = 2;
@@ -97,6 +135,9 @@ export class UIManager {
                 this.ctx.stroke();
             }
         }
+
+        // Draw Piano Keys
+        this.drawPianoKeys();
 
         // Draw Ruler Overlay
         this.drawRuler();
@@ -108,10 +149,10 @@ export class UIManager {
     drawSelectionRange(start, end) {
         const minTime = Math.min(start.time, end.time);
         const maxTime = Math.max(start.time, end.time);
-        const minPitch = Math.min(start.pitch, end.pitch);
-        const maxPitch = Math.max(start.pitch, end.pitch);
+        const minPitch = Math.round(Math.min(start.pitch, end.pitch));
+        const maxPitch = Math.round(Math.max(start.pitch, end.pitch));
 
-        const x = minTime * this.beatWidth - this.scrollX;
+        const x = minTime * this.beatWidth - this.scrollX + this.pianoKeyWidth;
         const y = (127 - maxPitch) * this.keyHeight - this.scrollY;
         const w = (maxTime - minTime + 4 / this.gridDivisions) * this.beatWidth; // Expand to cover grid slot roughly
         // Ideally selection should be inclusive of the full grid slot
@@ -138,7 +179,7 @@ export class UIManager {
     drawNotes(notes, selectedNotes = []) {
         // For prototype, simple loop is fine
         for (const note of notes) {
-            const x = note.time * this.beatWidth - this.scrollX;
+            const x = note.time * this.beatWidth - this.scrollX + this.pianoKeyWidth;
             const y = (127 - note.pitch) * this.keyHeight - this.scrollY;
 
             // Basic culling
@@ -219,13 +260,13 @@ export class UIManager {
             const beatIndex = Math.round(beatInBar);
 
             if (beatIndex % 2 === 1) { // 1 (2nd beat), 3 (4th beat)...
-                const x = b * this.beatWidth - this.scrollX;
+                const x = b * this.beatWidth - this.scrollX + this.pianoKeyWidth;
                 this.ctx.fillRect(x, 0, this.beatWidth, this.height);
             }
         }
 
         for (let t = gridStart; t < endBeat; t += step) {
-            const x = t * this.beatWidth - this.scrollX;
+            const x = t * this.beatWidth - this.scrollX + this.pianoKeyWidth;
 
             // Avoid drawing off-screen too much
             if (x < -10) continue;
@@ -266,28 +307,21 @@ export class UIManager {
             const isBlack = this.isBlackKey(note);
             if (isBlack) {
                 this.ctx.fillStyle = '#1e272e';
-                this.ctx.fillRect(0, y, this.width, this.keyHeight);
+                this.ctx.fillRect(this.pianoKeyWidth, y, this.width - this.pianoKeyWidth, this.keyHeight);
             }
 
             // Line
             this.ctx.strokeStyle = this.gridColor;
             this.ctx.beginPath();
-            this.ctx.moveTo(0, y);
+            this.ctx.moveTo(this.pianoKeyWidth, y);
             this.ctx.lineTo(this.width, y);
             this.ctx.stroke();
-
-            // Label C notes
-            if (note % 12 === 0) {
-                this.ctx.fillStyle = '#b2bec3';
-                this.ctx.font = '10px sans-serif';
-                this.ctx.fillText(`C${Math.floor(note / 12) - 1}`, 5, y + this.keyHeight - 5);
-            }
         }
     }
 
     drawCursor(cursor) {
         // Cursor is defined by Time (beats) and Pitch (int)
-        const x = cursor.time * this.beatWidth - this.scrollX;
+        const x = cursor.time * this.beatWidth - this.scrollX + this.pianoKeyWidth;
         const y = (127 - cursor.pitch) * this.keyHeight - this.scrollY;
 
         const step = 4 / this.gridDivisions;
@@ -302,9 +336,13 @@ export class UIManager {
     }
 
     drawRuler() {
+        // Corner Box
+        this.ctx.fillStyle = '#2d3436';
+        this.ctx.fillRect(0, 0, this.pianoKeyWidth, this.headerHeight);
+
         // Overlay background
         this.ctx.fillStyle = 'rgba(30, 30, 30, 0.9)';
-        this.ctx.fillRect(0, 0, this.width, this.headerHeight);
+        this.ctx.fillRect(this.pianoKeyWidth, 0, this.width - this.pianoKeyWidth, this.headerHeight);
 
         this.ctx.strokeStyle = '#555';
         this.ctx.beginPath();
@@ -328,7 +366,7 @@ export class UIManager {
         // And BPM changes?
 
         for (let b = startBeat; b < endBeat; b++) {
-            const x = b * this.beatWidth - this.scrollX;
+            const x = b * this.beatWidth - this.scrollX + this.pianoKeyWidth;
             if (x < -20) continue;
 
             const context = this.app.transport.getMeasureAt(b);
@@ -386,6 +424,43 @@ export class UIManager {
     isBlackKey(note) {
         const n = note % 12;
         return (n === 1 || n === 3 || n === 6 || n === 8 || n === 10);
+    }
+
+    drawPianoKeys() {
+        // Draw background for keys column
+        this.ctx.fillStyle = '#1e272e';
+        this.ctx.fillRect(0, 0, this.pianoKeyWidth, this.height);
+
+        const startNote = 127 - Math.floor((this.scrollY) / this.keyHeight);
+        const endNote = 127 - Math.floor((this.scrollY + this.height) / this.keyHeight);
+
+        for (let note = startNote; note >= endNote; note--) {
+            const y = (127 - note) * this.keyHeight - this.scrollY;
+            if (y < -this.keyHeight || y > this.height) continue;
+
+            const isBlack = this.isBlackKey(note);
+
+            this.ctx.fillStyle = isBlack ? '#000000' : '#ffffff';
+            this.ctx.fillRect(0, y, this.pianoKeyWidth, this.keyHeight);
+
+            this.ctx.strokeStyle = '#b2bec3';
+            this.ctx.strokeRect(0, y, this.pianoKeyWidth, this.keyHeight);
+
+            // Label C notes
+            if (note % 12 === 0) {
+                this.ctx.fillStyle = isBlack ? '#fff' : '#000';
+                this.ctx.font = '10px sans-serif';
+                this.ctx.textAlign = 'right';
+                this.ctx.fillText(`C${Math.floor(note / 12) - 1}`, this.pianoKeyWidth - 5, y + this.keyHeight - 5);
+            }
+        }
+        
+        // Border right
+        this.ctx.strokeStyle = '#000';
+        this.ctx.beginPath();
+        this.ctx.moveTo(this.pianoKeyWidth, 0);
+        this.ctx.lineTo(this.pianoKeyWidth, this.height);
+        this.ctx.stroke();
     }
 
     drawTimeline() {
