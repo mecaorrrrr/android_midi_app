@@ -8,6 +8,19 @@ export class InputManager {
 
         // State
         this.state = {
+            // ... (existing state)
+        };
+
+        // Button Mapping (Standard Gamepad Layout)
+        // DirectInput controllers may require different indices.
+        this.buttonMap = {
+            A: 0, B: 1, X: 2, Y: 3,
+            L1: 4, R1: 5, L2: 6, R2: 7,
+            SELECT: 8, START: 9,
+            UP: 12, DOWN: 13, LEFT: 14, RIGHT: 15
+        };
+
+        this.state = {
             cursor: {
                 time: 0,
                 pitch: 60
@@ -36,9 +49,9 @@ export class InputManager {
     }
 
     onGamepadConnected(e) {
-        console.log("Gamepad connected at index %d: %s. %d buttons, %d axes.",
+        console.log("Gamepad connected at index %d: %s. %d buttons, %d axes. Mapping: %s",
             e.gamepad.index, e.gamepad.id,
-            e.gamepad.buttons.length, e.gamepad.axes.length);
+            e.gamepad.buttons.length, e.gamepad.axes.length, e.gamepad.mapping);
         this.gamepads[e.gamepad.index] = e.gamepad;
         this.activeGamepadIndex = e.gamepad.index; // Auto switch to latest
 
@@ -111,26 +124,28 @@ export class InputManager {
         let dx = 0;
         let dy = 0;
 
+        const map = this.buttonMap;
+
         // Check button states
-        const aButtonHeld = gp.buttons[0] && gp.buttons[0].pressed;
-        const bButtonHeld = gp.buttons[1] && gp.buttons[1].pressed;
-        const yButtonHeld = gp.buttons[3] && gp.buttons[3].pressed; // Y/Triangle button
-        const l1Pressed = gp.buttons[4] && gp.buttons[4].pressed;
-        const r1Pressed = gp.buttons[5] && gp.buttons[5].pressed;
-        const l2Pressed = gp.buttons[6] && gp.buttons[6].pressed;
-        const r2Pressed = gp.buttons[7] && gp.buttons[7].pressed;
-        const startButtonHeld = gp.buttons[9] && gp.buttons[9].pressed;
-        const selectButtonHeld = gp.buttons[8] && gp.buttons[8].pressed;
+        const aButtonHeld = gp.buttons[map.A] && gp.buttons[map.A].pressed;
+        const bButtonHeld = gp.buttons[map.B] && gp.buttons[map.B].pressed;
+        const yButtonHeld = gp.buttons[map.Y] && gp.buttons[map.Y].pressed;
+        const l1Pressed = gp.buttons[map.L1] && gp.buttons[map.L1].pressed;
+        const r1Pressed = gp.buttons[map.R1] && gp.buttons[map.R1].pressed;
+        const l2Pressed = gp.buttons[map.L2] && gp.buttons[map.L2].pressed;
+        const r2Pressed = gp.buttons[map.R2] && gp.buttons[map.R2].pressed;
+        const startButtonHeld = gp.buttons[map.START] && gp.buttons[map.START].pressed;
+        const selectButtonHeld = gp.buttons[map.SELECT] && gp.buttons[map.SELECT].pressed;
 
         // D-Pad
-        if (gp.buttons[12].pressed) dy = 1; // Up
-        if (gp.buttons[13].pressed) dy = -1; // Down
+        if (gp.buttons[map.UP].pressed) dy = 1; // Up
+        if (gp.buttons[map.DOWN].pressed) dy = -1; // Down
 
         // Undo / Redo (L1 / R1)
-        if (l1Pressed && !this.lastButtonState[4]) {
+        if (l1Pressed && !this.lastButtonState[map.L1]) {
             this.app.undo();
         }
-        if (r1Pressed && !this.lastButtonState[5]) {
+        if (r1Pressed && !this.lastButtonState[map.R1]) {
             this.app.redo();
         }
 
@@ -141,13 +156,13 @@ export class InputManager {
             const track = this.app.songData.tracks[this.app.currentTrackId];
 
             // Volume (Up/Down)
-            if (gp.buttons[12].pressed && !this.lastButtonState[12]) {
+            if (gp.buttons[map.UP].pressed && !this.lastButtonState[map.UP]) {
                 track.volume = Math.min(1.0, track.volume + 0.05);
                 this.app.audio.setTrackVolume(this.app.currentTrackId, track.volume);
                 this.updateStatus(`Vol: ${track.volume.toFixed(2)}`);
                 this.startComboUsed = true;
             }
-            if (gp.buttons[13].pressed && !this.lastButtonState[13]) {
+            if (gp.buttons[map.DOWN].pressed && !this.lastButtonState[map.DOWN]) {
                 track.volume = Math.max(0, track.volume - 0.05);
                 this.app.audio.setTrackVolume(this.app.currentTrackId, track.volume);
                 this.updateStatus(`Vol: ${track.volume.toFixed(2)}`);
@@ -155,13 +170,13 @@ export class InputManager {
             }
 
             // Pan (Left/Right)
-            if (gp.buttons[14].pressed && !this.lastButtonState[14]) {
+            if (gp.buttons[map.LEFT].pressed && !this.lastButtonState[map.LEFT]) {
                 track.pan = Math.max(-1.0, track.pan - 0.1);
                 this.app.audio.setTrackPan(this.app.currentTrackId, track.pan);
                 this.updateStatus(`Pan: ${track.pan.toFixed(1)}`);
                 this.startComboUsed = true;
             }
-            if (gp.buttons[15].pressed && !this.lastButtonState[15]) {
+            if (gp.buttons[map.RIGHT].pressed && !this.lastButtonState[map.RIGHT]) {
                 track.pan = Math.min(1.0, track.pan + 0.1);
                 this.app.audio.setTrackPan(this.app.currentTrackId, track.pan);
                 this.updateStatus(`Pan: ${track.pan.toFixed(1)}`);
@@ -169,14 +184,14 @@ export class InputManager {
             }
 
             // Solo (A)
-            if (gp.buttons[0].pressed && !this.lastButtonState[0]) {
+            if (gp.buttons[map.A].pressed && !this.lastButtonState[map.A]) {
                 track.solo = !track.solo;
                 this.updateStatus(`Solo: ${track.solo ? 'ON' : 'OFF'}`);
                 this.startComboUsed = true;
             }
 
             // Mute (B)
-            if (gp.buttons[1].pressed && !this.lastButtonState[1]) {
+            if (gp.buttons[map.B].pressed && !this.lastButtonState[map.B]) {
                 track.muted = !track.muted;
                 this.updateStatus(`Mute: ${track.muted ? 'ON' : 'OFF'}`);
                 this.startComboUsed = true;
@@ -193,18 +208,18 @@ export class InputManager {
 
             if (r2Pressed) {
             // Grid Shortcuts
-            if (gp.buttons[14].pressed && !this.lastButtonState[14]) {
+            if (gp.buttons[map.LEFT].pressed && !this.lastButtonState[map.LEFT]) {
                 let div = this.app.ui.gridDivisions;
                 if (div < 64) this.app.ui.setGridDivisions(div * 2);
             }
-            if (gp.buttons[15].pressed && !this.lastButtonState[15]) {
+            if (gp.buttons[map.RIGHT].pressed && !this.lastButtonState[map.RIGHT]) {
                 let div = this.app.ui.gridDivisions;
                 if (div > 2) this.app.ui.setGridDivisions(div / 2);
             }
             } else {
             // Normal D-Pad
-            if (gp.buttons[14].pressed) dx = -1;
-            if (gp.buttons[15].pressed) dx = 1;
+            if (gp.buttons[map.LEFT].pressed) dx = -1;
+            if (gp.buttons[map.RIGHT].pressed) dx = 1;
             }
         }
 
@@ -285,6 +300,7 @@ export class InputManager {
     }
 
     handleButtons(gp, dx, dy, suppressActions = false, selectButtonHeld = false) {
+        const map = this.buttonMap;
         // Helper for button down
         const isDown = (i) => gp.buttons[i] && gp.buttons[i].pressed;
         const wasDown = (i) => this.lastButtonState[i];
@@ -292,7 +308,7 @@ export class InputManager {
         try {
             if (!suppressActions) {
             // Button 0 (A/Cross): Copy selection, Paste, or Place Note
-            if (isDown(0) && !wasDown(0) && dx === 0 && dy === 0) {
+            if (isDown(map.A) && !wasDown(map.A) && dx === 0 && dy === 0) {
                 if (this.state.hasSelection) {
                     this.copySelection();
                 } else if (this.state.clipboard) {
@@ -303,12 +319,12 @@ export class InputManager {
             }
 
             // Button 2 (X/Square): Play from cursor position
-            if (isDown(2) && !wasDown(2)) {
+            if (isDown(map.X) && !wasDown(map.X)) {
                 this.playFromCursor();
             }
 
             // Button 1 (B/Circle): Delete selection or Clear Clipboard
-            if (isDown(1) && !wasDown(1)) {
+            if (isDown(map.B) && !wasDown(map.B)) {
                 if (this.state.hasSelection) {
                     this.deleteSelectedNotes();
                 } else if (this.state.clipboard) {
@@ -318,7 +334,7 @@ export class InputManager {
             }
 
             // Button 8 (Select): Set Loop / Toggle Loop
-            if (isDown(8) && !wasDown(8)) {
+            if (isDown(map.SELECT) && !wasDown(map.SELECT)) {
                 if (this.state.hasSelection && this.state.selectedNotes.length > 0) {
                     // Set Loop to Selection
                     let minTime = Infinity;
