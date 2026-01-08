@@ -111,8 +111,11 @@ export class UIManager {
         this.drawGrid();
 
         // Draw Ghost Notes (Other tracks)
+        const anySolo = this.app.songData.tracks.some(t => t.solo);
         this.app.songData.tracks.forEach(track => {
-            if (track.id !== this.app.currentTrackId && !track.muted) {
+            if (track.id !== this.app.currentTrackId) {
+                if (anySolo && !track.solo) return;
+                if (track.muted) return;
                 this.drawGhostNotes(track.notes);
             }
         });
