@@ -216,6 +216,7 @@ export class SF2Parser {
                 this.presets[i + 1].bagIndex : presetBags.length - 1;
 
             preset.zones = [];
+            let globalGenerators = {};
             
             for (let b = bagStart; b < bagEnd; b++) {
                 const bag = presetBags[b];
@@ -243,9 +244,16 @@ export class SF2Parser {
 
                 // First zone without instrument is global zone
                 if (b === bagStart && !hasInstrument) {
-                    zone.isGlobal = true;
+                    globalGenerators = { ...zone.generators };
+                    continue;
                 }
                 
+                // Apply global generators
+                zone.generators = { ...globalGenerators, ...zone.generators };
+                if (zone.generators[41] !== undefined) {
+                    zone.instrumentIndex = zone.generators[41];
+                }
+
                 preset.zones.push(zone);
             }
         }
@@ -258,6 +266,7 @@ export class SF2Parser {
                 this.instruments[i + 1].bagIndex : instBags.length - 1;
 
             inst.zones = [];
+            let globalGenerators = {};
             
             for (let b = bagStart; b < bagEnd; b++) {
                 const bag = instBags[b];
@@ -283,6 +292,17 @@ export class SF2Parser {
                     }
                 }
 
+                if (b === bagStart && !hasSample) {
+                    globalGenerators = { ...zone.generators };
+                    continue;
+                }
+
+                // Apply global generators
+                zone.generators = { ...globalGenerators, ...zone.generators };
+                if (zone.generators[53] !== undefined) {
+                    zone.sampleIndex = zone.generators[53];
+                }
+
                 // Parse key and velocity ranges
                 // Generator 43: keyRange
                 if (zone.generators[43] !== undefined) {
@@ -302,11 +322,6 @@ export class SF2Parser {
                     zone.velHi = 127;
                 }
 
-                // First zone without sample is global zone
-                if (b === bagStart && !hasSample) {
-                    zone.isGlobal = true;
-                }
-
                 inst.zones.push(zone);
             }
         }
@@ -319,21 +334,16 @@ export class SF2Parser {
         }
 
         const preset = this.presets[presetIndex];
-        const globalZone = preset.zones.find(z => z.isGlobal);
 
         // Find matching preset zone
         for (const zone of preset.zones) {
-            if (zone.isGlobal) continue;
             if (zone.instrumentIndex === undefined) continue;
 
             const instrument = this.instruments[zone.instrumentIndex];
             if (!instrument) continue;
 
-            const instGlobalZone = instrument.zones.find(z => z.isGlobal);
-
             // Find matching instrument zone
             for (const instZone of instrument.zones) {
-                if (instZone.isGlobal) continue;
                 if (instZone.sampleIndex === undefined) continue;
 
                 // Check key and velocity range
@@ -345,9 +355,7 @@ export class SF2Parser {
                         return {
                             sample: sample,
                             presetZone: zone,
-                            instrumentZone: instZone,
-                            presetGlobal: globalZone,
-                            instrumentGlobal: instGlobalZone
+                            instrumentZone: instZone
                         };
                     }
                 }
