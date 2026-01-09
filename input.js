@@ -15,12 +15,18 @@ export class InputManager {
 
         // Button Mapping (Standard Gamepad Layout)
         // DirectInput controllers may require different indices.
-        this.buttonMap = {
+        this.defaultButtonMap = {
             A: 0, B: 1, X: 3, Y: 4,
             L1: 8, R1: 9, L2: 6, R2: 7,
             SELECT: 10, START: 11,
             UP: 12, DOWN: 13, LEFT: 14, RIGHT: 15
         };
+        this.buttonMap = { ...this.defaultButtonMap };
+        this.loadMapping();
+
+        this.isMapping = false;
+        this.mappingTarget = null;
+        this.onMappingComplete = null;
 
         this.state = {
             cursor: {
@@ -82,6 +88,33 @@ export class InputManager {
         if (el) el.textContent = msg;
     }
 
+    loadMapping() {
+        const saved = localStorage.getItem('gamepad_mapping');
+        if (saved) {
+            try {
+                this.buttonMap = JSON.parse(saved);
+            } catch (e) { console.error("Failed to load mapping", e); }
+        }
+    }
+
+    saveMapping() {
+        localStorage.setItem('gamepad_mapping', JSON.stringify(this.buttonMap));
+    }
+
+    resetMapping() {
+        this.buttonMap = { ...this.defaultButtonMap };
+        this.saveMapping();
+    }
+
+    startMapping(action, callback) {
+        this.isMapping = true;
+        this.mappingTarget = action;
+        this.onMappingComplete = callback;
+        // Reset last button state to avoid immediate trigger if something is held
+        // But we need edge detection, so we rely on the user releasing buttons first usually.
+        // We will handle the detection in handleInput.
+    }
+
     update() {
         // Poll Gamepads (Chrome requires polling)
         const gps = navigator.getGamepads ? navigator.getGamepads() : [];
@@ -116,6 +149,33 @@ export class InputManager {
     handleInput(gp) {
         const DEADZONE = 0.2; // 通常のデッドゾーン
         const SHORTCUT_DEADZONE = 0.6; // ショートカット用の高いデッドゾーン
+
+        // Mapping Mode Check
+        if (this.isMapping) {
+            for (let i = 0; i < gp.buttons.length; i++) {
+                if (gp.buttons[i].pressed && !this.lastButtonState[i]) {
+                    // Button detected (pressed edge)
+                    console.log(`Mapping ${this.mappingTarget} to button ${i}`);
+                    this.buttonMap[this.mappingTarget] = i;
+                    this.saveMapping();
+                    
+                    const callback = this.onMappingComplete;
+                    const target = this.mappingTarget;
+                    
+                    this.isMapping = false;
+                    this.mappingTarget = null;
+                    this.onMappingComplete = null;
+
+                    if (callback) callback(target, i);
+                    break;
+                }
+            }
+            // Update state to prevent re-triggering and allow edge detection
+            for (let i = 0; i < gp.buttons.length; i++) {
+                this.lastButtonState[i] = gp.buttons[i].pressed;
+            }
+            return; // Skip normal input processing
+        }
 
         // D-PAD & Stick handling for Cursor Movement
         // Mapping (Standard Gamepad)
