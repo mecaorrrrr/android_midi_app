@@ -37,7 +37,7 @@ export class UIManager {
         // Dynamic Scaling
         // Ensure minimal visibility for grid lines
         const step = 4 / divisions; // Beats per grid line
-        const MIN_PIXELS_PER_GRID = 15; // Minimum pixels between grid lines
+        const MIN_PIXELS_PER_GRID = 8; // Minimum pixels between grid lines
 
         // Exception: 1/16 grid uses 1/8 grid's scaling factor to maintain same measure width
         let scalingDivisions = divisions;

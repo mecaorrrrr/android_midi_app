@@ -3,7 +3,7 @@ export class InputManager {
         this.app = app;
         this.gamepads = {};
         this.activeGamepadIndex = null;
-        this.lastR2StickState = { x: 0, y: 0 }; // R2+スティック用の状態記憶
+        this.lastL2StickState = { x: 0, y: 0 }; // L2+スティック用の状態記憶
         this.lastStartStickState = { x: 0, y: 0 }; // Start+スティック用の状態記憶
         this.bButtonDownTime = 0;
         this.bButtonActionHandled = false;
@@ -314,7 +314,7 @@ export class InputManager {
             this.startComboUsed = false;
         }
 
-            if (r2Pressed) {
+            if (l2Pressed) {
             // グリッドショートカット用：高いデッドゾーンでデジタル化
             let stickX = 0;
             if (Math.abs(gp.axes[0]) > SHORTCUT_DEADZONE) {
@@ -322,7 +322,7 @@ export class InputManager {
             }
             
             // エッジ検出：前回と違う場合のみ反応
-            const stickXChanged = stickX !== this.lastR2StickState.x;
+            const stickXChanged = stickX !== this.lastL2StickState.x;
             
             // Grid Shortcuts - スティックまたは十字キー
             let newDiv = this.app.ui.gridDivisions;
@@ -344,14 +344,14 @@ export class InputManager {
                 this.updateStatus(`Grid: 1/${newDiv}`);
             }
             
-            // R2+スティックの状態を保存
-            this.lastR2StickState.x = stickX;
+            // L2+スティックの状態を保存
+            this.lastL2StickState.x = stickX;
             
-            // R2を押している間は通常の左右移動を無効化
+            // L2を押している間は通常の左右移動を無効化
             dx = 0;
         } else {
-            // R2を離した時、状態をリセット
-            this.lastR2StickState.x = 0;
+            // L2を離した時、状態をリセット
+            this.lastL2StickState.x = 0;
             
             // 通常のスティック操作（連続入力OK、低いデッドゾーン）
             // Normal D-Pad
@@ -361,7 +361,7 @@ export class InputManager {
     }
 
     // Left Stick（通常操作時のみ、連続入力可能）
-    if (!startButtonHeld && !r2Pressed) {
+    if (!startButtonHeld && !l2Pressed) {
         if (Math.abs(gp.axes[0]) > DEADZONE) dx = gp.axes[0] > 0 ? 1 : -1;
         if (Math.abs(gp.axes[1]) > DEADZONE) dy = gp.axes[1] > 0 ? -1 : 1;
     }
@@ -405,9 +405,9 @@ export class InputManager {
 
         } else {
             // Normal cursor movement
-            // Check for L1 modifier for fast movement
-            const unitX = l2Pressed ? 'measure' : 'grid';
-            const unitY = l2Pressed ? 'octave' : 'semitone';
+            // Check for R2 modifier for fast movement
+            const unitX = r2Pressed ? 'measure' : 'grid';
+            const unitY = r2Pressed ? 'octave' : 'semitone';
 
             this.processMovement('x', dx, unitX);
             this.processMovement('y', dy, unitY);
