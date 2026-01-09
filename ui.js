@@ -197,11 +197,14 @@ export class UIManager {
             // Check if selected
             const isSelected = selectedNotes.includes(note);
 
+            const velocity = note.velocity !== undefined ? note.velocity : 100;
+            const opacity = 0.3 + (0.7 * (velocity / 127));
+
             if (isSelected) {
-                this.ctx.fillStyle = '#00cec9'; // Cyan for selected
+                this.ctx.fillStyle = `rgba(0, 206, 201, ${opacity})`; // Cyan for selected
                 this.ctx.strokeStyle = '#00b894';
             } else {
-                this.ctx.fillStyle = '#fd79a8'; // Normal pink
+                this.ctx.fillStyle = `rgba(253, 121, 168, ${opacity})`; // Normal pink
                 this.ctx.strokeStyle = '#e84393';
             }
 

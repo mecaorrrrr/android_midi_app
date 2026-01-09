@@ -284,19 +284,19 @@ export class AudioManager {
         console.log(`Track ${trackId} preset changed to: ${preset.name} (Index: ${presetIndex})`);
     }
 
-    playNote(midi, duration = 1.0, trackId = 0) {
+    playNote(midi, duration = 1.0, trackId = 0, velocity = 100) {
         if (!this.ctx) return;
 
         if (this.mode === 'sf2' && this.sf2Data) {
-            this.playSF2Note(midi, duration, trackId);
+            this.playSF2Note(midi, duration, trackId, velocity);
         } else if (this.mode === 'sfz' && this.regions.length > 0) {
-            this.playSFZNote(midi, duration, trackId);
+            this.playSFZNote(midi, duration, trackId, velocity);
         } else {
-            this.playOscillator(midi, duration, trackId);
+            this.playOscillator(midi, duration, trackId, velocity);
         }
     }
 
-    playOscillator(midi, duration = 0.2, trackId = 0) {
+    playOscillator(midi, duration = 0.2, trackId = 0, velocity = 100) {
         if (!this.ctx) this.init();
         this.resume();
 
@@ -309,8 +309,9 @@ export class AudioManager {
         osc.type = 'sine';
         osc.frequency.setValueAtTime(this.midiToFreq(midi), this.ctx.currentTime);
 
+        const gainVal = (velocity / 127) * 0.5;
         envelope.gain.setValueAtTime(0, this.ctx.currentTime);
-        envelope.gain.linearRampToValueAtTime(0.5, this.ctx.currentTime + 0.01);
+        envelope.gain.linearRampToValueAtTime(gainVal, this.ctx.currentTime + 0.01);
         envelope.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
 
         osc.connect(envelope);
@@ -320,9 +321,7 @@ export class AudioManager {
         osc.stop(this.ctx.currentTime + duration + 0.1);
     }
 
-    playSFZNote(midi, duration, trackId = 0) {
-        const velocity = 100;
-
+    playSFZNote(midi, duration, trackId = 0, velocity = 100) {
         const region = this.regions.find(r => {
             const key = r.key !== undefined ? r.key : -1;
             const lokey = r.lokey !== undefined ? r.lokey : (key !== -1 ? key : 0);
@@ -335,13 +334,13 @@ export class AudioManager {
         });
 
         if (region && region.sample && this.buffers[region.sample]) {
-            this.triggerSample(this.buffers[region.sample], midi, region, duration, trackId);
+            this.triggerSample(this.buffers[region.sample], midi, region, duration, trackId, velocity);
         } else {
             console.warn("No SFZ region found for note", midi);
         }
     }
 
-    playSF2Note(midi, duration, trackId = 0) {
+    playSF2Note(midi, duration, trackId = 0, velocity = 100) {
         try {
             if (!this.sf2Data || !this.sf2Data.presets) return;
 
@@ -375,7 +374,7 @@ export class AudioManager {
                 return;
             }
 
-            const velocity = 100;
+            let fallbackZone = null;
 
             // Find instrument from preset zones
             for (const pzone of preset.zones) {
@@ -394,6 +393,11 @@ export class AudioManager {
                     const velLo = izone.velLo !== undefined ? izone.velLo : 0;
                     const velHi = izone.velHi !== undefined ? izone.velHi : 127;
 
+                    // Keep track of a zone that matches the key, even if velocity doesn't match
+                    if (midi >= keyLo && midi <= keyHi && izone.sampleIndex !== undefined && this.sf2Buffers[izone.sampleIndex]) {
+                        if (!fallbackZone) fallbackZone = { izone, pzone };
+                    }
+
                     if (midi >= keyLo && midi <= keyHi && velocity >= velLo && velocity <= velHi) {
                         if (izone.sampleIndex !== undefined && this.sf2Buffers[izone.sampleIndex]) {
                             const sample = this.sf2Data.samples[izone.sampleIndex];
@@ -404,12 +408,24 @@ export class AudioManager {
                                 izone, 
                                 pzone, 
                                 duration, 
-                                trackId
+                                trackId,
+                                velocity
                             );
                             return; // Play first matching zone
                         }
                     }
                 }
+            }
+
+            // If no exact match found, use fallback
+            if (fallbackZone) {
+                console.log(`Using fallback zone for note ${midi} (Vel ${velocity} not matched)`);
+                const { izone, pzone } = fallbackZone;
+                const sample = this.sf2Data.samples[izone.sampleIndex];
+                this.triggerSF2Sample(
+                    this.sf2Buffers[izone.sampleIndex], midi, sample, izone, pzone, duration, trackId, velocity
+                );
+                return;
             }
 
             console.warn(`No matching zone found for note ${midi} in preset ${preset.name}`);
@@ -418,9 +434,28 @@ export class AudioManager {
         }
     }
 
-    triggerSF2Sample(buffer, midi, sample, izone, pzone, duration = 1.0, trackId = 0) {
+    triggerSF2Sample(buffer, midi, sample, izone, pzone, duration = 1.0, trackId = 0, velocity = 100) {
         const source = this.ctx.createBufferSource();
         source.buffer = buffer;
+
+        // Loop handling
+        // Generator 54: sampleModes (0: no loop, 1: loop continuously, 3: loop during keypress)
+        let loopMode = 0;
+        if (izone.generators && izone.generators[54] !== undefined) {
+            loopMode = izone.generators[54];
+        }
+
+        if (loopMode === 1 || loopMode === 3) {
+            // Calculate loop points relative to buffer start
+            const loopStart = sample.loopStart - sample.start;
+            const loopEnd = sample.loopEnd - sample.start;
+            
+            if (loopEnd > loopStart && loopStart >= 0) {
+                source.loop = true;
+                source.loopStart = loopStart / sample.sampleRate;
+                source.loopEnd = loopEnd / sample.sampleRate;
+            }
+        }
 
         // Pitch adjustment logic considering SF2 generators
         // Generator 58: overridingRootKey
@@ -456,8 +491,9 @@ export class AudioManager {
         const now = this.ctx.currentTime;
         const releaseTime = 0.1;
 
-        gain.gain.setValueAtTime(0.8, now);
-        gain.gain.setValueAtTime(0.8, now + duration - releaseTime);
+        const gainVal = (velocity / 127) * 0.8;
+        gain.gain.setValueAtTime(gainVal, now);
+        gain.gain.setValueAtTime(gainVal, now + duration - releaseTime);
         gain.gain.linearRampToValueAtTime(0, now + duration);
 
         source.connect(gain);
@@ -467,7 +503,7 @@ export class AudioManager {
         source.stop(now + duration + 0.05);
     }
 
-    triggerSample(buffer, midi, region, duration = 1.0, trackId = 0) {
+    triggerSample(buffer, midi, region, duration = 1.0, trackId = 0, velocity = 100) {
         const source = this.ctx.createBufferSource();
         source.buffer = buffer;
 
@@ -480,8 +516,9 @@ export class AudioManager {
         const now = this.ctx.currentTime;
         const releaseTime = 0.1;
 
-        gain.gain.setValueAtTime(1, now);
-        gain.gain.setValueAtTime(1, now + duration - releaseTime);
+        const gainVal = velocity / 127;
+        gain.gain.setValueAtTime(gainVal, now);
+        gain.gain.setValueAtTime(gainVal, now + duration - releaseTime);
         gain.gain.linearRampToValueAtTime(0, now + duration);
 
         source.connect(gain);

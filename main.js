@@ -629,7 +629,8 @@ class App {
             for (const note of track.notes) {
                 if (note.time >= start && note.time < end) {
                     const currentBpm = this.transport.getBpmAt(note.time);
-                    this.audio.playNote(note.pitch, note.duration * (60 / currentBpm), track.id);
+                    const velocity = note.velocity !== undefined ? note.velocity : 100;
+                    this.audio.playNote(note.pitch, note.duration * (60 / currentBpm), track.id, velocity);
                 }
             }
         }
@@ -638,27 +639,34 @@ class App {
     populatePresetSelector() {
         const selector = document.getElementById('preset-selector');
         const presets = this.audio.getPresets();
+        
+        // Sort presets by Bank then Program
+        const sortedPresets = [...presets].sort((a, b) => {
+            if (a.bank !== b.bank) return a.bank - b.bank;
+            return a.preset - b.preset;
+        });
 
         selector.innerHTML = '';
-        presets.forEach((preset, idx) => {
+        sortedPresets.forEach((preset) => {
             const opt = document.createElement('option');
-            opt.value = idx;
+            opt.value = preset.index;
             opt.textContent = `${preset.bank}:${preset.preset} ${preset.name}`;
             selector.appendChild(opt);
         });
 
         selector.disabled = false;
 
-        // Select first preset for current track
-        if (presets.length > 0) {
-            this.audio.selectPreset(this.currentTrackId, 0);
-            selector.value = 0;
+        // Select first preset (sorted) for current track
+        if (sortedPresets.length > 0) {
+            const first = sortedPresets[0];
+            this.audio.selectPreset(this.currentTrackId, first.index);
+            selector.value = first.index;
             
             // Update current track data
             const track = this.songData.tracks[this.currentTrackId];
-            track.bank = presets[0].bank;
-            track.program = presets[0].preset;
-            track.presetIndex = 0;
+            track.bank = first.bank;
+            track.program = first.preset;
+            track.presetIndex = first.index;
         }
     }
 }
