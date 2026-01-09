@@ -43,6 +43,7 @@ class App {
 
         // File Loading
         this.setupFileMenu();
+        this.setupMappingModal();
 
         // SFZ Input
         document.getElementById('sfz-file-input').addEventListener('change', async (e) => {
@@ -300,9 +301,68 @@ class App {
         addMenuItem('Export MIDI', () => this.exportMIDI());
         addMenuItem('SFZ', () => document.getElementById('sfz-file-input').click());
         addMenuItem('SF2', () => document.getElementById('sf2-file-input').click());
+        addMenuItem('Controller Map', () => this.openMappingModal());
 
         menuContainer.appendChild(fileBtn);
         document.body.appendChild(ribbon);
+    }
+
+    setupMappingModal() {
+        const modal = document.getElementById('mapping-modal');
+        const closeBtn = document.getElementById('btn-close-mapping');
+        const resetBtn = document.getElementById('btn-reset-mapping');
+
+        closeBtn.addEventListener('click', () => {
+            modal.style.display = 'none';
+            this.input.isMapping = false; // Cancel mapping if open
+        });
+
+        resetBtn.addEventListener('click', () => {
+            if (confirm('Reset all button mappings to default?')) {
+                this.input.resetMapping();
+                this.updateMappingUI();
+            }
+        });
+    }
+
+    openMappingModal() {
+        const modal = document.getElementById('mapping-modal');
+        modal.style.display = 'flex';
+        this.updateMappingUI();
+    }
+
+    updateMappingUI() {
+        const container = document.getElementById('mapping-list');
+        container.innerHTML = '';
+
+        const map = this.input.buttonMap;
+        // Order keys for display
+        const keys = ['A', 'B', 'X', 'Y', 'L1', 'R1', 'L2', 'R2', 'SELECT', 'START', 'UP', 'DOWN', 'LEFT', 'RIGHT'];
+
+        keys.forEach(key => {
+            const val = map[key];
+            const div = document.createElement('div');
+            div.className = 'mapping-item';
+            
+            const label = document.createElement('span');
+            label.textContent = key;
+            
+            const btn = document.createElement('button');
+            btn.className = 'mapping-btn';
+            btn.textContent = `Btn ${val}`;
+            btn.onclick = () => {
+                btn.textContent = 'Press...';
+                btn.classList.add('waiting');
+                this.input.startMapping(key, (target, newIndex) => {
+                    btn.textContent = `Btn ${newIndex}`;
+                    btn.classList.remove('waiting');
+                });
+            };
+
+            div.appendChild(label);
+            div.appendChild(btn);
+            container.appendChild(div);
+        });
     }
 
     validateTracksAgainstSF2() {
