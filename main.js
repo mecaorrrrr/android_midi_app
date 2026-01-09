@@ -44,6 +44,7 @@ class App {
         // File Loading
         this.setupFileMenu();
         this.setupMappingModal();
+        this.setupTrackListModal();
 
         // SFZ Input
         document.getElementById('sfz-file-input').addEventListener('change', async (e) => {
@@ -362,6 +363,85 @@ class App {
             div.appendChild(label);
             div.appendChild(btn);
             container.appendChild(div);
+        });
+    }
+
+    setupTrackListModal() {
+        this.isTrackListOpen = false;
+        document.getElementById('btn-close-tracklist').addEventListener('click', () => {
+            this.toggleTrackListModal(false);
+        });
+    }
+
+    toggleTrackListModal(show) {
+        const modal = document.getElementById('track-list-modal');
+        if (show) {
+            this.updateTrackListUI();
+            modal.style.display = 'flex';
+            this.isTrackListOpen = true;
+        } else {
+            modal.style.display = 'none';
+            this.isTrackListOpen = false;
+        }
+    }
+
+    updateTrackListUI() {
+        const tbody = document.getElementById('track-list-body');
+        tbody.innerHTML = '';
+
+        this.songData.tracks.forEach(track => {
+            const tr = document.createElement('tr');
+            tr.className = 'track-row';
+            if (track.id === this.currentTrackId) {
+                tr.classList.add('active');
+            }
+
+            // Determine Instrument Name
+            let instrumentName = "Sine Wave";
+            if (this.audio.mode === 'sf2' && this.audio.sf2Data) {
+                const presets = this.audio.getPresets();
+                let p = null;
+                // Try to find by index first, then bank/prog
+                if (track.presetIndex !== undefined && presets[track.presetIndex]) {
+                    p = presets[track.presetIndex];
+                } else {
+                    p = presets.find(pr => pr.bank === track.bank && pr.preset === track.program);
+                }
+                if (p) instrumentName = p.name;
+            } else if (this.audio.mode === 'sfz') {
+                instrumentName = "SFZ Sample";
+            }
+
+            tr.innerHTML = `
+                <td>${track.id + 1}</td>
+                <td>${track.name}</td>
+                <td>${instrumentName}</td>
+                <td>${Math.round(track.volume * 100)}%</td>
+                <td>${track.pan.toFixed(1)}</td>
+                <td><button class="track-btn ${track.solo ? 'active' : ''}" data-action="solo">Solo</button></td>
+                <td><button class="track-btn ${track.muted ? 'active-mute' : ''}" data-action="mute">Mute</button></td>
+            `;
+
+            tr.addEventListener('click', () => {
+                this.currentTrackId = track.id;
+                this.input.updateStatus(`Track: ${track.id + 1}`);
+                this.updateTrackUI();
+                this.updateTrackListUI();
+            });
+
+            tr.querySelector('[data-action="solo"]').addEventListener('click', (e) => {
+                e.stopPropagation();
+                track.solo = !track.solo;
+                this.updateTrackListUI();
+            });
+
+            tr.querySelector('[data-action="mute"]').addEventListener('click', (e) => {
+                e.stopPropagation();
+                track.muted = !track.muted;
+                this.updateTrackListUI();
+            });
+
+            tbody.appendChild(tr);
         });
     }
 

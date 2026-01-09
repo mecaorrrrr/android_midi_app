@@ -5,8 +5,12 @@ export class InputManager {
         this.activeGamepadIndex = null;
         this.lastR2StickState = { x: 0, y: 0 }; // R2+スティック用の状態記憶
         this.lastStartStickState = { x: 0, y: 0 }; // Start+スティック用の状態記憶
+        this.bButtonDownTime = 0;
+        this.bButtonActionHandled = false;
+        this.startPressTime = 0;
 
         this.lastNoteDuration = null;
+        this.lastNoteVelocity = 100;
 
         // State
         this.state = {
@@ -218,6 +222,18 @@ export class InputManager {
         dx = 0;
         dy = 0;
 
+            if (!this.wasStartButtonHeld) {
+                this.startPressTime = Date.now();
+            }
+
+            // Long Press (250ms) to open Track List
+            if (!this.startComboUsed && !this.app.isTrackListOpen) {
+                if (Date.now() - this.startPressTime > 500) {
+                    this.app.toggleTrackListModal(true);
+                    this.startComboUsed = true; // Prevent short-press action
+                }
+            }
+
         const track = this.app.songData.tracks[this.app.currentTrackId];
 
         // スティックをデジタル化（高いデッドゾーン）
@@ -287,9 +303,13 @@ export class InputManager {
 
         if (this.wasStartButtonHeld) {
             if (!this.startComboUsed) {
-                this.app.currentTrackId = (this.app.currentTrackId + 1) % 8;
-                this.updateStatus(`Track: ${this.app.currentTrackId + 1}`);
-                if (this.app.updateTrackUI) this.app.updateTrackUI();
+                if (this.app.isTrackListOpen) {
+                    this.app.toggleTrackListModal(false);
+                } else {
+                    this.app.currentTrackId = (this.app.currentTrackId + 1) % 8;
+                    this.updateStatus(`Track: ${this.app.currentTrackId + 1}`);
+                    if (this.app.updateTrackUI) this.app.updateTrackUI();
+                }
             }
             this.startComboUsed = false;
         }
@@ -305,13 +325,23 @@ export class InputManager {
             const stickXChanged = stickX !== this.lastR2StickState.x;
             
             // Grid Shortcuts - スティックまたは十字キー
-            if ((isPressed(map.LEFT) && !this.lastButtonState[map.LEFT]) || (stickXChanged && stickX > 0)) {
-                let div = this.app.ui.gridDivisions;
-                if (div > 2) this.app.ui.setGridDivisions(div / 2);
+            let newDiv = this.app.ui.gridDivisions;
+            let gridChanged = false;
+
+            if ((isPressed(map.RIGHT) && !this.lastButtonState[map.RIGHT]) || (stickXChanged && stickX > 0)) {
+                if (newDiv > 2) { newDiv /= 2; gridChanged = true; }
             }
-            if ((isPressed(map.RIGHT) && !this.lastButtonState[map.RIGHT]) || (stickXChanged && stickX < 0)) {
-                let div = this.app.ui.gridDivisions;
-                if (div < 32) this.app.ui.setGridDivisions(div * 2);
+            if ((isPressed(map.LEFT) && !this.lastButtonState[map.LEFT]) || (stickXChanged && stickX < 0)) {
+                if (newDiv < 32) { newDiv *= 2; gridChanged = true; }
+            }
+
+            if (gridChanged) {
+                this.app.ui.setGridDivisions(newDiv);
+                // Update default note duration and snap cursor
+                const step = 4 / newDiv;
+                this.lastNoteDuration = step;
+                this.state.cursor.time = Math.round(this.state.cursor.time / step) * step;
+                this.updateStatus(`Grid: 1/${newDiv}`);
             }
             
             // R2+スティックの状態を保存
@@ -364,13 +394,14 @@ export class InputManager {
                 this.finalizeSelection();
             }
 
+        } else if (aButtonHeld && (dx !== 0 || dy !== 0)) {
+            // A + Left/Right = Change note duration, A + Up/Down = Change Velocity
+            if (dx !== 0) this.processNoteLengthChange(dx);
+            if (dy !== 0) this.processNoteVelocityChange(dy);
+
         } else if (this.state.hasSelection && (dx !== 0 || dy !== 0)) {
             // Have selection and moving - move selected notes
             this.moveSelectedNotes(dx, dy);
-
-        } else if (aButtonHeld && dx !== 0) {
-            // A + Left/Right = Change note duration
-            this.processNoteLengthChange(dx);
 
         } else {
             // Normal cursor movement
@@ -383,7 +414,10 @@ export class InputManager {
         }
 
         // Clear continuous action timers if not in use
-        if (!aButtonHeld) delete this.repeatTimers['note_length'];
+        if (!aButtonHeld) {
+            delete this.repeatTimers['note_length'];
+            delete this.repeatTimers['note_velocity'];
+        }
         if (!this.state.hasSelection) delete this.repeatTimers['move_selection'];
 
         this.wasYButtonHeld = yButtonHeld;
@@ -400,6 +434,12 @@ export class InputManager {
         // Update UI info
         document.getElementById('time-val').textContent = this.state.cursor.time.toFixed(2);
         document.getElementById('pitch-val').textContent = this.midiToNoteName(this.state.cursor.pitch);
+        
+        // Update Velocity Display
+        const noteAtCursor = this.getNoteAtCursor();
+        const displayVel = noteAtCursor ? (noteAtCursor.velocity || 100) : this.lastNoteVelocity;
+        const velEl = document.getElementById('vel-val');
+        if (velEl) velEl.textContent = Math.round(displayVel);
     }
 
     handleButtons(gp, dx, dy, suppressActions = false, selectButtonHeld = false) {
@@ -407,17 +447,18 @@ export class InputManager {
         // Helper for button down
         const isDown = (i) => gp.buttons[i] && gp.buttons[i].pressed;
         const wasDown = (i) => this.lastButtonState[i];
+        const now = Date.now();
 
         try {
             if (!suppressActions) {
-            // Button 0 (A/Cross): Copy selection, Paste, or Place Note
+            // Button 0 (A/Cross): Paste or Place Note
             if (isDown(map.A) && !wasDown(map.A) && dx === 0 && dy === 0) {
-                if (this.state.hasSelection) {
-                    this.copySelection();
-                } else if (this.state.clipboard) {
-                    this.pasteClipboard();
-                } else {
-                    this.placeNote();
+                if (!this.state.hasSelection) {
+                    if (this.state.clipboard) {
+                        this.pasteClipboard();
+                    } else {
+                        this.placeNote();
+                    }
                 }
             }
 
@@ -426,13 +467,32 @@ export class InputManager {
                 this.playFromCursor();
             }
 
-            // Button 1 (B/Circle): Delete selection or Clear Clipboard
-            if (isDown(map.B) && !wasDown(map.B)) {
-                if (this.state.hasSelection) {
-                    this.deleteSelectedNotes();
-                } else if (this.state.clipboard) {
-                    this.state.clipboard = null;
-                    this.updateStatus("Clipboard cleared");
+            // Button 1 (B/Circle): Short=Copy/Clear, Long=Delete
+            if (isDown(map.B)) {
+                if (!wasDown(map.B)) {
+                    this.bButtonDownTime = now;
+                    this.bButtonActionHandled = false;
+                } else {
+                    // Holding
+                    if (!this.bButtonActionHandled && (now - this.bButtonDownTime > 300)) {
+                        if (this.state.hasSelection) {
+                            this.deleteSelectedNotes();
+                            this.app.showToast("Selection Deleted");
+                            this.bButtonActionHandled = true;
+                        }
+                    }
+                }
+            } else if (wasDown(map.B)) {
+                // Released
+                if (!this.bButtonActionHandled) {
+                    if (this.state.hasSelection) {
+                        this.copySelection();
+                        this.app.showToast("Copied");
+                    } else if (this.state.clipboard) {
+                        this.state.clipboard = null;
+                        this.updateStatus("Clipboard cleared");
+                        this.app.showToast("Clipboard Cleared");
+                    }
                 }
             }
 
@@ -582,12 +642,13 @@ export class InputManager {
                     duration = 4 / divs;
                 }
                 this.lastNoteDuration = duration;
+                const velocity = this.lastNoteVelocity;
 
-                notes.push({ time, pitch, duration });
+                notes.push({ time, pitch, duration, velocity });
 
                 // Play feedback
                 if (this.app.audio && this.app.audio.playNote) {
-                    this.app.audio.playNote(pitch, 0.25, trackId);
+                    this.app.audio.playNote(pitch, 0.25, trackId, velocity);
                 }
             }
         } catch (e) {
@@ -596,14 +657,19 @@ export class InputManager {
     }
 
     processNoteLengthChange(dx) {
-        // Change duration of note at cursor position
-        const { time, pitch } = this.state.cursor;
-        const track = this.app.songData.tracks[this.app.currentTrackId];
-        const notes = track.notes;
-        const EPSILON = 0.001;
-        const note = notes.find(n => Math.abs(n.time - time) < EPSILON && n.pitch === pitch);
+        let targets = [];
+        if (this.state.hasSelection && this.state.selectedNotes.length > 0) {
+            targets = this.state.selectedNotes;
+        } else {
+            const { time, pitch } = this.state.cursor;
+            const track = this.app.songData.tracks[this.app.currentTrackId];
+            const notes = track.notes;
+            const EPSILON = 0.001;
+            const note = notes.find(n => Math.abs(n.time - time) < EPSILON && n.pitch === pitch);
+            if (note) targets.push(note);
+        }
 
-        if (note) {
+        if (targets.length > 0) {
             // Apply rate-limited change (slower than cursor movement)
             const now = Date.now();
             const key = 'note_length';
@@ -611,21 +677,68 @@ export class InputManager {
             const NOTE_LENGTH_RATE = 120;  // Rate when holding (slower than cursor)
             const step = 4 / this.app.ui.gridDivisions; // Change by grid step
 
+            const applyChange = () => {
+                targets.forEach(note => {
+                    note.duration += dx > 0 ? step : -step;
+                    if (note.duration < step) note.duration = step;
+                    this.lastNoteDuration = note.duration;
+                });
+            };
+
             if (!this.repeatTimers[key]) {
                 this.app.saveState();
-                note.duration += dx > 0 ? step : -step;
-                if (note.duration < step) note.duration = step;
-                this.lastNoteDuration = note.duration;
+                applyChange();
                 this.repeatTimers[key] = { start: now, lastInfo: now };
             } else {
                 const timer = this.repeatTimers[key];
                 if (now - timer.start > NOTE_LENGTH_DELAY) {
                     if (now - timer.lastInfo > NOTE_LENGTH_RATE) {
-                        note.duration += dx > 0 ? step : -step;
-                        if (note.duration < step) note.duration = step;
-                        this.lastNoteDuration = note.duration;
+                        applyChange();
                         timer.lastInfo = now;
                     }
+                }
+            }
+        }
+    }
+
+    processNoteVelocityChange(dy) {
+        let targets = [];
+        if (this.state.hasSelection && this.state.selectedNotes.length > 0) {
+            targets = this.state.selectedNotes;
+        } else {
+            const { time, pitch } = this.state.cursor;
+            const track = this.app.songData.tracks[this.app.currentTrackId];
+            const EPSILON = 0.001;
+            const note = track.notes.find(n => Math.abs(n.time - time) < EPSILON && n.pitch === pitch);
+            if (note) targets.push(note);
+        }
+
+        if (targets.length > 0) {
+            const now = Date.now();
+            const key = 'note_velocity';
+            const DELAY = 150;
+            const RATE = 50; // Faster than length change
+            const step = 5; // Velocity step
+
+            const applyChange = () => {
+                targets.forEach(note => {
+                    if (note.velocity === undefined) note.velocity = 100;
+                    note.velocity += dy > 0 ? step : -step;
+                    if (note.velocity < 1) note.velocity = 1;
+                    if (note.velocity > 127) note.velocity = 127;
+                    this.lastNoteVelocity = note.velocity;
+                });
+            };
+
+            if (!this.repeatTimers[key]) {
+                this.app.saveState();
+                applyChange();
+                this.repeatTimers[key] = { start: now, lastInfo: now };
+            } else {
+                const timer = this.repeatTimers[key];
+                if (now - timer.start > DELAY && now - timer.lastInfo > RATE) {
+                    applyChange();
+                    timer.lastInfo = now;
                 }
             }
         }
@@ -847,5 +960,12 @@ export class InputManager {
         const octave = Math.floor(midi / 12) - 1;
         const note = notes[midi % 12];
         return `${note}${octave}`;
+    }
+
+    getNoteAtCursor() {
+        const { time, pitch } = this.state.cursor;
+        const track = this.app.songData.tracks[this.app.currentTrackId];
+        const EPSILON = 0.001;
+        return track.notes.find(n => Math.abs(n.time - time) < EPSILON && n.pitch === pitch);
     }
 }
