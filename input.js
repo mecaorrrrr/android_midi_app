@@ -7,10 +7,7 @@ export class InputManager {
         this.lastStartStickState = { x: 0, y: 0 }; // Start+スティック用の状態記憶
         this.bButtonDownTime = 0;
         this.bButtonActionHandled = false;
-<<<<<<< HEAD
         this.startPressTime = 0;
-=======
->>>>>>> 64b7f57e48e2f124a8bf6a855028df8605a1d67e
 
         this.lastNoteDuration = null;
         this.lastNoteVelocity = 100;
