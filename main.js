@@ -44,6 +44,7 @@ class App {
         // File Loading
         this.setupFileMenu();
         this.setupMappingModal();
+        this.setupTrackListModal();
 
         // SFZ Input
         document.getElementById('sfz-file-input').addEventListener('change', async (e) => {
@@ -365,6 +366,85 @@ class App {
         });
     }
 
+    setupTrackListModal() {
+        this.isTrackListOpen = false;
+        document.getElementById('btn-close-tracklist').addEventListener('click', () => {
+            this.toggleTrackListModal(false);
+        });
+    }
+
+    toggleTrackListModal(show) {
+        const modal = document.getElementById('track-list-modal');
+        if (show) {
+            this.updateTrackListUI();
+            modal.style.display = 'flex';
+            this.isTrackListOpen = true;
+        } else {
+            modal.style.display = 'none';
+            this.isTrackListOpen = false;
+        }
+    }
+
+    updateTrackListUI() {
+        const tbody = document.getElementById('track-list-body');
+        tbody.innerHTML = '';
+
+        this.songData.tracks.forEach(track => {
+            const tr = document.createElement('tr');
+            tr.className = 'track-row';
+            if (track.id === this.currentTrackId) {
+                tr.classList.add('active');
+            }
+
+            // Determine Instrument Name
+            let instrumentName = "Sine Wave";
+            if (this.audio.mode === 'sf2' && this.audio.sf2Data) {
+                const presets = this.audio.getPresets();
+                let p = null;
+                // Try to find by index first, then bank/prog
+                if (track.presetIndex !== undefined && presets[track.presetIndex]) {
+                    p = presets[track.presetIndex];
+                } else {
+                    p = presets.find(pr => pr.bank === track.bank && pr.preset === track.program);
+                }
+                if (p) instrumentName = p.name;
+            } else if (this.audio.mode === 'sfz') {
+                instrumentName = "SFZ Sample";
+            }
+
+            tr.innerHTML = `
+                <td>${track.id + 1}</td>
+                <td>${track.name}</td>
+                <td>${instrumentName}</td>
+                <td>${Math.round(track.volume * 100)}%</td>
+                <td>${track.pan.toFixed(1)}</td>
+                <td><button class="track-btn ${track.solo ? 'active' : ''}" data-action="solo">Solo</button></td>
+                <td><button class="track-btn ${track.muted ? 'active-mute' : ''}" data-action="mute">Mute</button></td>
+            `;
+
+            tr.addEventListener('click', () => {
+                this.currentTrackId = track.id;
+                this.input.updateStatus(`Track: ${track.id + 1}`);
+                this.updateTrackUI();
+                this.updateTrackListUI();
+            });
+
+            tr.querySelector('[data-action="solo"]').addEventListener('click', (e) => {
+                e.stopPropagation();
+                track.solo = !track.solo;
+                this.updateTrackListUI();
+            });
+
+            tr.querySelector('[data-action="mute"]').addEventListener('click', (e) => {
+                e.stopPropagation();
+                track.muted = !track.muted;
+                this.updateTrackListUI();
+            });
+
+            tbody.appendChild(tr);
+        });
+    }
+
     validateTracksAgainstSF2() {
         const presets = this.audio.getPresets();
         if (!presets || presets.length === 0) return;
@@ -629,8 +709,7 @@ class App {
             for (const note of track.notes) {
                 if (note.time >= start && note.time < end) {
                     const currentBpm = this.transport.getBpmAt(note.time);
-                    const velocity = note.velocity !== undefined ? note.velocity : 100;
-                    this.audio.playNote(note.pitch, note.duration * (60 / currentBpm), track.id, velocity);
+                    this.audio.playNote(note.pitch, note.duration * (60 / currentBpm), track.id);
                 }
             }
         }
@@ -639,34 +718,27 @@ class App {
     populatePresetSelector() {
         const selector = document.getElementById('preset-selector');
         const presets = this.audio.getPresets();
-        
-        // Sort presets by Bank then Program
-        const sortedPresets = [...presets].sort((a, b) => {
-            if (a.bank !== b.bank) return a.bank - b.bank;
-            return a.preset - b.preset;
-        });
 
         selector.innerHTML = '';
-        sortedPresets.forEach((preset) => {
+        presets.forEach((preset, idx) => {
             const opt = document.createElement('option');
-            opt.value = preset.index;
+            opt.value = idx;
             opt.textContent = `${preset.bank}:${preset.preset} ${preset.name}`;
             selector.appendChild(opt);
         });
 
         selector.disabled = false;
 
-        // Select first preset (sorted) for current track
-        if (sortedPresets.length > 0) {
-            const first = sortedPresets[0];
-            this.audio.selectPreset(this.currentTrackId, first.index);
-            selector.value = first.index;
+        // Select first preset for current track
+        if (presets.length > 0) {
+            this.audio.selectPreset(this.currentTrackId, 0);
+            selector.value = 0;
             
             // Update current track data
             const track = this.songData.tracks[this.currentTrackId];
-            track.bank = first.bank;
-            track.program = first.preset;
-            track.presetIndex = first.index;
+            track.bank = presets[0].bank;
+            track.program = presets[0].preset;
+            track.presetIndex = 0;
         }
     }
 }

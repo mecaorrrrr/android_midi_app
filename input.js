@@ -7,6 +7,7 @@ export class InputManager {
         this.lastStartStickState = { x: 0, y: 0 }; // Start+スティック用の状態記憶
         this.bButtonDownTime = 0;
         this.bButtonActionHandled = false;
+        this.startPressTime = 0;
 
         this.lastNoteDuration = null;
         this.lastNoteVelocity = 100;
@@ -221,6 +222,18 @@ export class InputManager {
         dx = 0;
         dy = 0;
 
+            if (!this.wasStartButtonHeld) {
+                this.startPressTime = Date.now();
+            }
+
+            // Long Press (500ms) to open Track List
+            if (!this.startComboUsed && !this.app.isTrackListOpen) {
+                if (Date.now() - this.startPressTime > 500) {
+                    this.app.toggleTrackListModal(true);
+                    this.startComboUsed = true; // Prevent short-press action
+                }
+            }
+
         const track = this.app.songData.tracks[this.app.currentTrackId];
 
         // スティックをデジタル化（高いデッドゾーン）
@@ -290,9 +303,13 @@ export class InputManager {
 
         if (this.wasStartButtonHeld) {
             if (!this.startComboUsed) {
-                this.app.currentTrackId = (this.app.currentTrackId + 1) % 8;
-                this.updateStatus(`Track: ${this.app.currentTrackId + 1}`);
-                if (this.app.updateTrackUI) this.app.updateTrackUI();
+                if (this.app.isTrackListOpen) {
+                    this.app.toggleTrackListModal(false);
+                } else {
+                    this.app.currentTrackId = (this.app.currentTrackId + 1) % 8;
+                    this.updateStatus(`Track: ${this.app.currentTrackId + 1}`);
+                    if (this.app.updateTrackUI) this.app.updateTrackUI();
+                }
             }
             this.startComboUsed = false;
         }
