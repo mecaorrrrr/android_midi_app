@@ -105,42 +105,6 @@ class App {
             }
         });
 
-        // Transport/Structure Controls
-        document.getElementById('btn-add-bpm').addEventListener('click', () => {
-            const cursorTime = this.input.state.cursor.time;
-            const currentBpm = this.transport.getBpmAt(cursorTime);
-            const targetTime = Math.round(cursorTime * 100) / 100;
-
-            const val = prompt(`Enter BPM at ${targetTime}:`, currentBpm);
-            if (val) {
-                const bpm = parseFloat(val);
-                if (!isNaN(bpm) && bpm > 0) {
-                    this.transport.addTempoChange(targetTime, bpm);
-                    alert(`Added BPM change to ${bpm} at beat ${targetTime}`);
-                }
-            }
-        });
-
-        document.getElementById('btn-add-ts').addEventListener('click', () => {
-            const cursorTime = this.input.state.cursor.time;
-            const context = this.transport.getMeasureAt(cursorTime);
-            const currentTs = context.timeSig;
-            const targetTime = Math.round(cursorTime * 100) / 100;
-
-            const val = prompt(`Enter Time Signature (num/den) at ${targetTime}:`, `${currentTs.num}/${currentTs.den}`);
-            if (val) {
-                const parts = val.split('/');
-                if (parts.length === 2) {
-                    const num = parseInt(parts[0]);
-                    const den = parseInt(parts[1]);
-                    if (!isNaN(num) && !isNaN(den)) {
-                        this.transport.addTimeSigChange(targetTime, num, den);
-                        alert(`Added Time Sig change to ${num}/${den} at beat ${targetTime}`);
-                    }
-                }
-            }
-        });
-
         // Transport
         this.cardinalTime = 0;
         this.playbackStartTime = 0;
@@ -232,7 +196,7 @@ class App {
 
     setupFileMenu() {
         // Hide legacy buttons
-        const ids = ['btn-play', 'btn-stop', 'btn-save', 'btn-load', 'btn-export', 'btn-load-sfz', 'btn-load-sf2'];
+        const ids = ['btn-play', 'btn-stop', 'btn-save', 'btn-load', 'btn-export', 'btn-load-sfz', 'btn-load-sf2', 'btn-add-marker', 'btn-add-bpm', 'btn-add-ts'];
         ids.forEach(id => {
             const el = document.getElementById(id);
             if (el) el.style.display = 'none';
@@ -303,9 +267,170 @@ class App {
         addMenuItem('SFZ', () => document.getElementById('sfz-file-input').click());
         addMenuItem('SF2', () => document.getElementById('sf2-file-input').click());
         addMenuItem('Controller Map', () => this.openMappingModal());
+        addMenuItem('Add Marker', () => this.addMarker());
+        addMenuItem('Add BPM', () => this.addBpm());
+        addMenuItem('Add TS', () => this.addTimeSig());
 
         menuContainer.appendChild(fileBtn);
         document.body.appendChild(ribbon);
+
+        // ADD Menu (similar to FILE menu)
+        this.setupAddMenu();
+    }
+
+    setupAddMenu() {
+        // Create marker navigation container (left of ADD button)
+        const navContainer = document.createElement('div');
+        navContainer.style.display = 'inline-flex';
+        navContainer.style.gap = '2px';
+        navContainer.style.marginRight = '5px';
+        navContainer.style.alignItems = 'center';
+
+        const markerLabel = document.createElement('span');
+        markerLabel.textContent = 'Marker : ';
+        markerLabel.style.color = '#b2bec3';
+        markerLabel.style.fontSize = '14px';
+        markerLabel.style.marginRight = '4px';
+        navContainer.appendChild(markerLabel);
+        
+        const prevBtn = document.createElement('button');
+        prevBtn.textContent = '◀';
+        prevBtn.className = 'control-btn';
+        prevBtn.title = 'Previous Marker';
+        prevBtn.addEventListener('click', () => this.navigateToPrevMarker());
+        
+        const nextBtn = document.createElement('button');
+        nextBtn.textContent = '▶';
+        nextBtn.className = 'control-btn';
+        nextBtn.title = 'Next Marker';
+        nextBtn.addEventListener('click', () => this.navigateToNextMarker());
+        
+        navContainer.appendChild(prevBtn);
+        navContainer.appendChild(nextBtn);
+        
+        // Create ADD Button
+        const addBtn = document.createElement('button');
+        addBtn.textContent = 'ADD';
+        addBtn.className = 'control-btn';
+        addBtn.style.fontWeight = 'bold';
+        
+        // Ribbon (Dropdown)
+        const ribbon = document.createElement('div');
+        ribbon.style.display = 'none';
+        ribbon.style.position = 'absolute';
+        ribbon.style.backgroundColor = '#2d3436';
+        ribbon.style.border = '1px solid #555';
+        ribbon.style.padding = '5px';
+        ribbon.style.zIndex = '1000';
+        ribbon.style.flexDirection = 'column';
+        ribbon.style.gap = '5px';
+        ribbon.style.minWidth = '120px';
+        ribbon.style.borderRadius = '4px';
+
+        addBtn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const isVisible = ribbon.style.display === 'flex';
+            ribbon.style.display = isVisible ? 'none' : 'flex';
+            
+            const rect = addBtn.getBoundingClientRect();
+            ribbon.style.top = `${rect.bottom + window.scrollY + 5}px`;
+            ribbon.style.left = `${rect.left + window.scrollX}px`;
+        });
+
+        document.addEventListener('click', () => {
+            ribbon.style.display = 'none';
+        });
+
+        const addMenuItem = (text, onClick) => {
+            const item = document.createElement('button');
+            item.textContent = text;
+            item.className = 'control-btn';
+            item.style.width = '100%';
+            item.style.textAlign = 'left';
+            item.style.marginBottom = '2px';
+            item.addEventListener('click', onClick);
+            ribbon.appendChild(item);
+        };
+
+        addMenuItem('Marker', () => this.addMarker());
+        addMenuItem('BPM', () => this.addBpm());
+        addMenuItem('Time Sig', () => this.addTimeSig());
+
+        // Insert before preset selector
+        const presetSel = document.getElementById('preset-selector');
+        if (presetSel && presetSel.parentElement) {
+            // Insert navigation first, then ADD button
+            presetSel.parentElement.insertBefore(navContainer, presetSel);
+            presetSel.parentElement.insertBefore(addBtn, presetSel);
+        }
+        document.body.appendChild(ribbon);
+    }
+
+    addMarker() {
+        const cursorTime = this.input.state.cursor.time;
+        const result = this.transport.addMarker(cursorTime);
+        if (result.removed) {
+            this.showToast(`Marker ${result.label} removed`);
+        } else {
+            this.showToast(`Marker ${result.label} added at beat ${cursorTime.toFixed(2)}`);
+        }
+    }
+
+    addBpm() {
+        const cursorTime = this.input.state.cursor.time;
+        const currentBpm = this.transport.getBpmAt(cursorTime);
+        const targetTime = Math.round(cursorTime * 100) / 100;
+
+        const val = prompt(`Enter BPM at ${targetTime}:`, currentBpm);
+        if (val) {
+            const bpm = parseFloat(val);
+            if (!isNaN(bpm) && bpm > 0) {
+                this.transport.addTempoChange(targetTime, bpm);
+                alert(`Added BPM change to ${bpm} at beat ${targetTime}`);
+            }
+        }
+    }
+
+    addTimeSig() {
+        const cursorTime = this.input.state.cursor.time;
+        const context = this.transport.getMeasureAt(cursorTime);
+        const currentTs = context.timeSig;
+        const targetTime = Math.round(cursorTime * 100) / 100;
+
+        const val = prompt(`Enter Time Signature (num/den) at ${targetTime}:`, `${currentTs.num}/${currentTs.den}`);
+        if (val) {
+            const parts = val.split('/');
+            if (parts.length === 2) {
+                const num = parseInt(parts[0]);
+                const den = parseInt(parts[1]);
+                if (!isNaN(num) && !isNaN(den)) {
+                    this.transport.addTimeSigChange(targetTime, num, den);
+                    alert(`Added Time Sig change to ${num}/${den} at beat ${targetTime}`);
+                }
+            }
+        }
+    }
+
+    navigateToPrevMarker() {
+        const cursorTime = this.input.state.cursor.time;
+        const prevMarker = this.transport.getPrevMarker(cursorTime);
+        if (prevMarker) {
+            this.input.state.cursor.time = prevMarker.beat;
+            this.showToast(`Jump to marker ${prevMarker.label}`);
+        } else {
+            this.showToast('No marker on the left');
+        }
+    }
+
+    navigateToNextMarker() {
+        const cursorTime = this.input.state.cursor.time;
+        const nextMarker = this.transport.getNextMarker(cursorTime);
+        if (nextMarker) {
+            this.input.state.cursor.time = nextMarker.beat;
+            this.showToast(`Jump to marker ${nextMarker.label}`);
+        } else {
+            this.showToast('No marker on the right');
+        }
     }
 
     setupMappingModal() {
@@ -552,7 +677,8 @@ class App {
             transport: {
                 bpm: this.bpm,
                 tempoMap: this.transport.tempoMap,
-                timeSigMap: this.transport.timeSigMap
+                timeSigMap: this.transport.timeSigMap,
+                markerMap: this.transport.markerMap
             }
         };
 
@@ -582,6 +708,7 @@ class App {
                 if (project.transport) {
                     this.transport.tempoMap = project.transport.tempoMap || [{ beat: 0, bpm: 120 }];
                     this.transport.timeSigMap = project.transport.timeSigMap || [{ beat: 0, num: 4, den: 4 }];
+                    this.transport.markerMap = project.transport.markerMap || [];
                 }
 
                 // Sync Instruments to Audio Engine

@@ -11,6 +11,9 @@ export class TransportManager {
         this.timeSigMap = [
             { beat: 0, num: 4, den: 4 }
         ];
+
+        // Markers: Array of { beat, label }
+        this.markerMap = [];
     }
 
     getBpmAt(beat) {
@@ -52,6 +55,62 @@ export class TransportManager {
             this.timeSigMap.push({ beat, num, den });
             this.timeSigMap.sort((a, b) => a.beat - b.beat);
         }
+    }
+
+    addMarker(beat) {
+        // Check if marker already exists at this position
+        const existingIdx = this.markerMap.findIndex(e => Math.abs(e.beat - beat) < 0.001);
+        
+        if (existingIdx >= 0) {
+            // Marker exists - remove it (toggle off)
+            const removed = this.markerMap.splice(existingIdx, 1);
+            return { label: removed[0]?.label, removed: true };
+        }
+        
+        // Generate next alphabet label (A, B, C, ... Z, AA, AB, ...)
+        const nextLabel = this.getNextMarkerLabel();
+        this.markerMap.push({ beat, label: nextLabel });
+        this.markerMap.sort((a, b) => a.beat - b.beat);
+        return { label: nextLabel, removed: false };
+    }
+
+    getNextMarkerLabel() {
+        const existingLabels = this.markerMap.map(m => m.label);
+        const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        
+        // Simple increment: A, B, C, ... Z, AA, AB...
+        let num = existingLabels.length;
+        let label = '';
+        let n = num;
+        
+        do {
+            const index = n % 26;
+            label = alphabet[index] + label;
+            n = Math.floor(n / 26) - 1;
+        } while (n >= 0);
+        
+        return label || 'A';
+    }
+
+    removeMarker(beat) {
+        const idx = this.markerMap.findIndex(e => Math.abs(e.beat - beat) < 0.001);
+        if (idx >= 0) {
+            this.markerMap.splice(idx, 1);
+        }
+    }
+
+    getPrevMarker(beat) {
+        // Find the closest marker to the left of the given beat
+        const prevMarkers = this.markerMap.filter(m => m.beat < beat - 0.001);
+        if (prevMarkers.length === 0) return null;
+        return prevMarkers[prevMarkers.length - 1];
+    }
+
+    getNextMarker(beat) {
+        // Find the closest marker to the right of the given beat
+        const nextMarkers = this.markerMap.filter(m => m.beat > beat + 0.001);
+        if (nextMarkers.length === 0) return null;
+        return nextMarkers[0];
     }
 
     // Get context (Measure number, etc.) at a given absolute beat

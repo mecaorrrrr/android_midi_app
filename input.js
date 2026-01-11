@@ -791,6 +791,16 @@ export class InputManager {
         const step = 4 / this.app.ui.gridDivisions;
 
         const doMove = () => {
+            // Check if any note would go below 0 before moving
+            if (dx < 0) {
+                for (const note of this.state.selectedNotes) {
+                    if (note.time <= 0) {
+                        // Don't move left if any note is at or below 0
+                        return;
+                    }
+                }
+            }
+
             for (const note of this.state.selectedNotes) {
                 note.time += dx * step;
                 note.pitch += dy;

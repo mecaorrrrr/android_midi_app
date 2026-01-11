@@ -103,6 +103,37 @@ export class UIManager {
             if (this.scrollX < 0) this.scrollX = 0;
         }
 
+        // Auto-scroll Cursor (when cursor moves near edges)
+        if (this.hasCursor && inputState && inputState.cursor) {
+            const cursorScreenX = this.cursorTime * this.beatWidth - this.scrollX + this.pianoKeyWidth;
+            const cursorScreenY = (127 - this.cursorPitch) * this.keyHeight - this.scrollY;
+            
+            // Scroll margin from edges
+            const marginX = 50;
+            const marginY = 50;
+            
+            // Scroll Right
+            if (cursorScreenX > this.width - marginX) {
+                this.scrollX = this.cursorTime * this.beatWidth - marginX;
+            }
+            // Scroll Left
+            if (cursorScreenX < this.pianoKeyWidth + marginX) {
+                this.scrollX = this.cursorTime * this.beatWidth - this.pianoKeyWidth - marginX;
+            }
+            // Scroll Down (higher pitch = lower on screen)
+            if (cursorScreenY > this.height - marginY) {
+                this.scrollY = (127 - this.cursorPitch) * this.keyHeight - this.height + marginY;
+            }
+            // Scroll Up (lower pitch = higher on screen)
+            if (cursorScreenY < marginY) {
+                this.scrollY = (127 - this.cursorPitch) * this.keyHeight - marginY;
+            }
+            
+            // Ensure scroll bounds
+            if (this.scrollX < 0) this.scrollX = 0;
+            if (this.scrollY < 0) this.scrollY = 0;
+        }
+
         // Clear
         this.ctx.fillStyle = this.bgColor;
         this.ctx.fillRect(0, 0, this.width, this.height);
@@ -391,6 +422,37 @@ export class UIManager {
                 this.ctx.strokeStyle = this.app.isLooping ? '#00cec9' : '#555';
                 this.ctx.lineWidth = 2;
                 this.ctx.strokeRect(Math.max(this.pianoKeyWidth, startX), 0, width, this.headerHeight);
+            }
+        }
+
+        // Draw Markers
+        const markers = this.app.transport.markerMap;
+        if (markers && markers.length > 0) {
+            this.ctx.font = 'bold 12px sans-serif';
+            this.ctx.textAlign = 'left';
+            
+            for (const marker of markers) {
+                // Draw marker to the right of measure number (offset by 25px)
+                const x = marker.beat * this.beatWidth - this.scrollX + this.pianoKeyWidth + 25;
+                
+                // Only draw if visible
+                if (x >= this.pianoKeyWidth && x <= this.width) {
+                    // Draw marker background
+                    const size = this.headerHeight - 4;
+                    
+                    this.ctx.fillStyle = 'rgba(253, 203, 110, 0.2)';
+                    this.ctx.fillRect(x - 2, 2, size, size);
+                    
+                    this.ctx.strokeStyle = '#fdcb6e';
+                    this.ctx.lineWidth = 1;
+                    this.ctx.strokeRect(x - 2, 2, size, size);
+                    
+                    // Draw marker text
+                    this.ctx.fillStyle = '#fdcb6e';
+                    this.ctx.textAlign = 'center';
+                    this.ctx.fillText(marker.label, x - 2 + size / 2, 20);
+                    this.ctx.textAlign = 'left';
+                }
             }
         }
 
