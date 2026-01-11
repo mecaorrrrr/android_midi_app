@@ -267,9 +267,6 @@ class App {
         addMenuItem('SFZ', () => document.getElementById('sfz-file-input').click());
         addMenuItem('SF2', () => document.getElementById('sf2-file-input').click());
         addMenuItem('Controller Map', () => this.openMappingModal());
-        addMenuItem('Add Marker', () => this.addMarker());
-        addMenuItem('Add BPM', () => this.addBpm());
-        addMenuItem('Add TS', () => this.addTimeSig());
 
         menuContainer.appendChild(fileBtn);
         document.body.appendChild(ribbon);
