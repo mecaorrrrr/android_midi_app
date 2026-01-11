@@ -14,9 +14,9 @@ export class UIManager {
 
         // Settings
         this.beatWidth = 50; // Pixels per beat/quarter note
-        this.keyHeight = 20; // Pixels per key
+        this.keyHeight = 15; // Pixels per key
         this.headerHeight = 30; // Ruler height
-        this.gridColor = '#2d3436';
+        this.gridColor = '#666';
         this.barColor = '#636e72';
         this.bgColor = '#111';
 
@@ -273,13 +273,13 @@ export class UIManager {
 
 
         // Draw Vertical Lines (Time/Beats)
-        this.ctx.lineWidth = 1;
+        this.ctx.lineWidth = 0.3;
 
         // Align start to grid
         const gridStart = Math.floor(startBeat / step) * step;
 
         // Draw Background Highlights for Even Beats (2nd, 4th, etc.) relative to Bar Start
-        this.ctx.fillStyle = 'rgba(255, 255, 255, 0.03)';
+        this.ctx.fillStyle = 'rgba(90, 100, 100, 0.05)';
 
         // Loop beats for highlights
         for (let b = Math.floor(startBeat); b < endBeat; b++) {
@@ -340,7 +340,7 @@ export class UIManager {
                 this.ctx.lineWidth = 2;
             } else {
                 this.ctx.strokeStyle = this.gridColor; // Beat/Subdivision line
-                this.ctx.lineWidth = 1;
+                this.ctx.lineWidth = 0.3;
             }
 
             this.ctx.moveTo(x, 0);
@@ -365,7 +365,7 @@ export class UIManager {
             // Draw Background for Black Keys
             const isBlack = this.isBlackKey(note);
             if (isBlack) {
-                this.ctx.fillStyle = '#1e272e';
+                this.ctx.fillStyle = 'rgba(30, 39, 46, 0.7)';
                 this.ctx.fillRect(this.pianoKeyWidth, y, this.width - this.pianoKeyWidth, this.keyHeight);
             }
 
