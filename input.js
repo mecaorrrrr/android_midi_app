@@ -432,7 +432,32 @@ export class InputManager {
         this.handleButtons(gp, dx, dy, startButtonHeld, selectButtonHeld);
 
         // Update UI info
-        document.getElementById('time-val').textContent = this.state.cursor.time.toFixed(2);
+        const cursorTime = this.state.cursor.time;
+        
+        // Format time as: Measure:Grid (based on current grid division)
+        const context = this.app.transport.getMeasureAt(cursorTime);
+        const measureNum = context.measure;
+        
+        // Use current grid division setting
+        const gridDivisions = this.app.ui.gridDivisions;
+        const beatsPerMeasure = context.timeSig.num * (4 / context.timeSig.den);
+        const localBeat = context.beatInBar;
+        
+        // Convert to current grid division
+        // Example: 8-grid, localBeat=1.5 (2nd beat and a half)
+        // gridPosition = (1.5 * 8 / 4) + 1 = 4
+        let gridPosition = (localBeat * (gridDivisions / beatsPerMeasure)) + 1;
+        
+        // For 32-grid, show 0.5 increments (divide by 2 and add 0.5 offset)
+        // 32-grid position 8 -> 4.5, position 12 -> 6.5, etc.
+        let gridDisplay;
+        if (gridDivisions === 32) {
+            gridDisplay = gridPosition / 2 + 0.5;
+        } else {
+            gridDisplay = Math.round(gridPosition * 2) / 2;
+        }
+        
+        document.getElementById('time-val').textContent = `${measureNum}:${gridDisplay}`;
         document.getElementById('pitch-val').textContent = this.midiToNoteName(this.state.cursor.pitch);
         
         // Update Velocity Display
