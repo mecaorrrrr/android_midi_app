@@ -14,11 +14,11 @@ export class UIManager {
 
         // Settings
         this.beatWidth = 50; // Pixels per beat/quarter note
-        this.keyHeight = 15; // Pixels per key
+        this.keyHeight = 20; // Pixels per key
         this.headerHeight = 30; // Ruler height
         this.gridColor = '#666';
         this.barColor = '#636e72';
-        this.bgColor = '#111';
+        this.bgColor = '#272A2D';
 
         // Grid Settings
         this.gridDivisions = 4; // Divisions per bar (4 beats). 4 = quarter notes.
@@ -279,7 +279,7 @@ export class UIManager {
         const gridStart = Math.floor(startBeat / step) * step;
 
         // Draw Background Highlights for Even Beats (2nd, 4th, etc.) relative to Bar Start
-        this.ctx.fillStyle = 'rgba(90, 100, 100, 0.05)';
+        this.ctx.fillStyle = 'rgba(160, 160, 160, 0.03)';
 
         // Loop beats for highlights
         for (let b = Math.floor(startBeat); b < endBeat; b++) {
@@ -365,12 +365,17 @@ export class UIManager {
             // Draw Background for Black Keys
             const isBlack = this.isBlackKey(note);
             if (isBlack) {
-                this.ctx.fillStyle = 'rgba(30, 39, 46, 0.7)';
+                this.ctx.fillStyle = 'rgba(27, 29, 31, 0.7)';
                 this.ctx.fillRect(this.pianoKeyWidth, y, this.width - this.pianoKeyWidth, this.keyHeight);
             }
 
-            // Line
+            // Line - Octave lines (B notes) are thicker
             this.ctx.strokeStyle = this.gridColor;
+            if (note % 12 === 11) {
+                this.ctx.lineWidth = 1.0; // Thicker line for octave boundaries
+            } else {
+                this.ctx.lineWidth = 0.5;
+            }
             this.ctx.beginPath();
             this.ctx.moveTo(this.pianoKeyWidth, y);
             this.ctx.lineTo(this.width, y);
@@ -409,19 +414,25 @@ export class UIManager {
         this.ctx.lineTo(this.width, this.headerHeight);
         this.ctx.stroke();
 
-        // Draw Loop Marker
+        // Draw Loop Marker (Clamped to stay visible on screen)
         if (this.app.loopRegion) {
-            const startX = this.app.loopRegion.start * this.beatWidth - this.scrollX + this.pianoKeyWidth;
-            const endX = this.app.loopRegion.end * this.beatWidth - this.scrollX + this.pianoKeyWidth;
-            const width = endX - startX;
-
-            if (endX > this.pianoKeyWidth && startX < this.width) {
+            const rawStartX = this.app.loopRegion.start * this.beatWidth - this.scrollX + this.pianoKeyWidth;
+            const rawEndX = this.app.loopRegion.end * this.beatWidth - this.scrollX + this.pianoKeyWidth;
+            const width = rawEndX - rawStartX;
+            
+            // Calculate visible bounds
+            const visibleStartX = Math.max(this.pianoKeyWidth, rawStartX);
+            const visibleEndX = Math.min(this.width, rawEndX);
+            const visibleWidth = Math.max(0, visibleEndX - visibleStartX);
+            
+            // Only draw if visible
+            if (visibleWidth > 0) {
                 this.ctx.fillStyle = this.app.isLooping ? 'rgba(0, 206, 201, 0.3)' : 'rgba(30, 39, 46, 0.5)';
-                this.ctx.fillRect(Math.max(this.pianoKeyWidth, startX), 0, width, this.headerHeight);
+                this.ctx.fillRect(visibleStartX, 0, visibleWidth, this.headerHeight);
                 
                 this.ctx.strokeStyle = this.app.isLooping ? '#00cec9' : '#555';
                 this.ctx.lineWidth = 2;
-                this.ctx.strokeRect(Math.max(this.pianoKeyWidth, startX), 0, width, this.headerHeight);
+                this.ctx.strokeRect(visibleStartX, 0, visibleWidth, this.headerHeight);
             }
         }
 
@@ -546,7 +557,7 @@ export class UIManager {
 
             const isBlack = this.isBlackKey(note);
 
-            this.ctx.fillStyle = isBlack ? '#000000' : '#ffffff';
+            this.ctx.fillStyle = isBlack ? '#2a3135' : '#f0f2f3';
             this.ctx.fillRect(0, y, this.pianoKeyWidth, this.keyHeight);
 
             this.ctx.strokeStyle = '#b2bec3';

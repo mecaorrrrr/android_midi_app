@@ -284,7 +284,7 @@ class App {
         navContainer.style.alignItems = 'center';
 
         const markerLabel = document.createElement('span');
-        markerLabel.textContent = 'Marker : ';
+        markerLabel.textContent = 'Marker ';
         markerLabel.style.color = '#b2bec3';
         markerLabel.style.fontSize = '14px';
         markerLabel.style.marginRight = '4px';

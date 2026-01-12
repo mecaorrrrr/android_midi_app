@@ -538,6 +538,8 @@ export class InputManager {
                         this.app.loopRegion = { start: minTime, end: maxEnd };
                         this.app.isLooping = true;
                         this.app.showToast(`Loop Set: ${minTime.toFixed(1)} - ${maxEnd.toFixed(1)}`);
+                        // Clear selection after setting loop
+                        this.clearSelection();
                     }
                 } else {
                     // Toggle Loop
