@@ -129,6 +129,89 @@
             color: white;
             border-color: #ff7675;
         }
+        /* Preset Browser Styles */
+        .preset-browser {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+        }
+        .preset-search-box {
+            display: flex;
+            gap: 10px;
+        }
+        .preset-search-input {
+            flex: 1;
+            padding: 10px;
+            border: 1px solid #555;
+            border-radius: 5px;
+            background: #1e272e;
+            color: #dfe6e9;
+            font-size: 14px;
+        }
+        .preset-filter-select {
+            padding: 10px;
+            border: 1px solid #555;
+            border-radius: 5px;
+            background: #1e272e;
+            color: #dfe6e9;
+            font-size: 14px;
+        }
+        .preset-list {
+            max-height: 400px;
+            overflow-y: auto;
+            border: 1px solid #444;
+            border-radius: 5px;
+            background: #1e272e;
+        }
+        .preset-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 10px 15px;
+            border-bottom: 1px solid #333;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .preset-item:hover {
+            background-color: rgba(9, 132, 227, 0.2);
+        }
+        .preset-item.selected {
+            background-color: rgba(9, 132, 227, 0.4);
+            border-left: 3px solid #0984e3;
+        }
+        .preset-item .preset-name {
+            font-weight: 500;
+        }
+        .preset-item .preset-bank {
+            font-size: 12px;
+            color: #b2bec3;
+        }
+        .preset-item .preset-category {
+            font-size: 11px;
+            padding: 2px 6px;
+            border-radius: 3px;
+            background: #2d3436;
+            color: #b2bec3;
+        }
+        .preset-category-piano { background: #e17055 !important; color: white !important; }
+        .preset-category-chromatic { background: #fdcb6e !important; color: #2d3436 !important; }
+        .preset-category-drums { background: #d63031 !important; color: white !important; }
+        .preset-category-gm { background: #0984e3 !important; color: white !important; }
+        .preset-category-user { background: #00b894 !important; color: white !important; }
+        .preset-info {
+            display: flex;
+            gap: 20px;
+            padding: 10px;
+            background: rgba(0,0,0,0.2);
+            border-radius: 5px;
+            font-size: 12px;
+            color: #b2bec3;
+        }
+        .preset-info span {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+        }
     </style>
 </head>
 
@@ -152,6 +235,7 @@
                 <input type="file" id="sfz-file-input" webkitdirectory directory multiple style="display: none;">
                 <button id="btn-load-sf2" class="secondary-btn">SF2</button>
                 <input type="file" id="sf2-file-input" accept=".sf2" style="display: none;">
+                <button id="btn-preset-browser" class="secondary-btn">🎹 Presets</button>
                 <select id="preset-selector" class="preset-select" disabled>
                     <option value="">-- No SF2 --</option>
                 </select>
@@ -206,6 +290,39 @@
             </table>
             <div class="modal-actions">
                 <button id="btn-close-tracklist" class="secondary-btn">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Preset Browser Modal -->
+    <div id="preset-browser-modal" class="modal">
+        <div class="modal-content glass-panel" style="max-width: 600px;">
+            <h2>Preset Browser</h2>
+            <div class="preset-browser">
+                <div class="preset-search-box">
+                    <input type="text" id="preset-search-input" class="preset-search-input" placeholder="Search presets...">
+                    <select id="preset-category-filter" class="preset-filter-select">
+                        <option value="all">All Categories</option>
+                        <option value="piano">Piano</option>
+                        <option value="chromatic">Chromatic</option>
+                        <option value="drums">Drums</option>
+                        <option value="gm">GM</option>
+                        <option value="user">User</option>
+                    </select>
+                </div>
+                <div class="preset-info">
+                    <span id="preset-count">Presets: 0</span>
+                    <span id="preset-font-name">Font: None</span>
+                    <span id="preset-memory">Memory: 0 MB</span>
+                </div>
+                <div id="preset-list" class="preset-list">
+                    <div class="preset-item">
+                        <span class="preset-name">No sound font loaded</span>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button id="btn-close-presetbrowser" class="secondary-btn">Close</button>
             </div>
         </div>
     </div>

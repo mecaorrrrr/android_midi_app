@@ -30,6 +30,9 @@ class App {
         this.ui = new UIManager(this);
         this.audio = new AudioManager();
         this.input = new InputManager(this);
+        
+        // NEW: Direct access to AudioEngine for testing new features
+        this.audioEngine = null;
 
         this.lastTime = 0;
         this.resize();
@@ -68,6 +71,10 @@ class App {
                     document.getElementById('status-display').textContent = "SF2 Loaded";
                     this.populatePresetSelector();
                     this.validateTracksAgainstSF2();
+                    // Update preset browser if open
+                    if (this.ui && typeof this.ui.loadPresets === 'function') {
+                        this.ui.loadPresets();
+                    }
                 } else {
                     document.getElementById('status-display').textContent = "SF2 Load Failed";
                 }
@@ -115,6 +122,19 @@ class App {
 
         this.loop = this.loop.bind(this);
         requestAnimationFrame(this.loop);
+    }
+    
+    /**
+     * Get or initialize the new AudioEngine (for testing new features)
+     */
+    async getAudioEngine() {
+        if (!this.audioEngine) {
+            const { AudioEngine } = await import('./audio/AudioEngine.js');
+            this.audioEngine = new AudioEngine();
+            await this.audioEngine.init();
+            console.log("AudioEngine initialized directly");
+        }
+        return this.audioEngine;
     }
 
     saveState() {

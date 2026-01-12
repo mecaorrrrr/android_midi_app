@@ -28,6 +28,258 @@ export class UIManager {
         this.cursorPitch = 60; // MIDI Note Number (Middle C)
         this.hasCursor = false;
         this.pianoKeyWidth = 40;
+
+        // Preset Browser State
+        this.presetSearchQuery = '';
+        this.presetCategoryFilter = 'all';
+        this.allPresets = [];
+        this.filteredPresets = [];
+
+        // Initialize preset browser event listeners
+        this.initPresetBrowser();
+    }
+
+    /**
+     * Initialize preset browser UI and event listeners
+     */
+    initPresetBrowser() {
+        // Get DOM elements
+        this.presetBrowserModal = document.getElementById('preset-browser-modal');
+        this.presetListContainer = document.getElementById('preset-list');
+        this.presetSearchInput = document.getElementById('preset-search-input');
+        this.presetCategoryFilterSelect = document.getElementById('preset-category-filter');
+        this.presetCountEl = document.getElementById('preset-count');
+        this.presetFontNameEl = document.getElementById('preset-font-name');
+        this.presetMemoryEl = document.getElementById('preset-memory');
+
+        // Open preset browser button
+        const btnPresetBrowser = document.getElementById('btn-preset-browser');
+        if (btnPresetBrowser) {
+            btnPresetBrowser.addEventListener('click', () => this.openPresetBrowser());
+        }
+
+        // Close button
+        const btnClosePresetBrowser = document.getElementById('btn-close-presetbrowser');
+        if (btnClosePresetBrowser) {
+            btnClosePresetBrowser.addEventListener('click', () => this.closePresetBrowser());
+        }
+
+        // Search input
+        if (this.presetSearchInput) {
+            this.presetSearchInput.addEventListener('input', (e) => {
+                this.presetSearchQuery = e.target.value;
+                this.filterPresets();
+            });
+        }
+
+        // Category filter
+        if (this.presetCategoryFilterSelect) {
+            this.presetCategoryFilterSelect.addEventListener('change', (e) => {
+                this.presetCategoryFilter = e.target.value;
+                this.filterPresets();
+            });
+        }
+
+        // Close modal when clicking outside
+        if (this.presetBrowserModal) {
+            this.presetBrowserModal.addEventListener('click', (e) => {
+                if (e.target === this.presetBrowserModal) {
+                    this.closePresetBrowser();
+                }
+            });
+        }
+    }
+
+    /**
+     * Open the preset browser modal
+     */
+    openPresetBrowser() {
+        if (!this.presetBrowserModal) return;
+        
+        // Load presets from audio engine
+        this.loadPresets();
+        
+        this.presetBrowserModal.style.display = 'flex';
+        console.log('Preset browser opened');
+    }
+
+    /**
+     * Close the preset browser modal
+     */
+    closePresetBrowser() {
+        if (!this.presetBrowserModal) return;
+        
+        this.presetBrowserModal.style.display = 'none';
+        console.log('Preset browser closed');
+    }
+
+    /**
+     * Load presets from the audio engine
+     */
+    loadPresets() {
+        if (!this.app.audioEngine || !this.app.audioEngine.soundFontManager) {
+            this.allPresets = [];
+            this.updatePresetList();
+            this.updatePresetInfo();
+            return;
+        }
+
+        const soundFontManager = this.app.audioEngine.soundFontManager;
+        
+        // Get all presets
+        this.allPresets = soundFontManager.getAllPresets() || [];
+        
+        // Get font info
+        const fontIds = soundFontManager.getLoadedFontIds();
+        if (fontIds.length > 0) {
+            const fontInfo = soundFontManager.getFontInfo(fontIds[0]);
+            if (fontInfo) {
+                this.presetFontNameEl.textContent = `Font: ${fontInfo.name}`;
+            }
+        } else {
+            this.presetFontNameEl.textContent = 'Font: None';
+        }
+
+        // Get memory stats
+        const memStats = soundFontManager.getMemoryStats();
+        this.presetMemoryEl.textContent = `Memory: ${memStats.currentUsage}`;
+
+        // Apply filters and update display
+        this.filterPresets();
+    }
+
+    /**
+     * Filter presets based on search query and category
+     */
+    filterPresets() {
+        let presets = [...this.allPresets];
+
+        // Apply search filter
+        if (this.presetSearchQuery && this.presetSearchQuery.trim() !== '') {
+            const query = this.presetSearchQuery.toLowerCase();
+            presets = presets.filter(p => 
+                p.name.toLowerCase().includes(query) ||
+                p.fullName.toLowerCase().includes(query) ||
+                p.bank.toString().includes(query) ||
+                p.preset.toString().includes(query)
+            );
+        }
+
+        // Apply category filter
+        if (this.presetCategoryFilter && this.presetCategoryFilter !== 'all') {
+            presets = presets.filter(p => p.category === this.presetCategoryFilter);
+        }
+
+        this.filteredPresets = presets;
+        this.updatePresetList();
+        this.updatePresetInfo();
+    }
+
+    /**
+     * Update the preset list display
+     */
+    updatePresetList() {
+        if (!this.presetListContainer) return;
+
+        // Clear current list
+        this.presetListContainer.innerHTML = '';
+
+        if (this.filteredPresets.length === 0) {
+            const emptyItem = document.createElement('div');
+            emptyItem.className = 'preset-item';
+            emptyItem.innerHTML = `<span class="preset-name">No presets found</span>`;
+            this.presetListContainer.appendChild(emptyItem);
+            return;
+        }
+
+        // Create preset items
+        this.filteredPresets.forEach((preset, index) => {
+            const item = document.createElement('div');
+            item.className = 'preset-item';
+            item.dataset.index = preset.index;
+            item.dataset.fontId = preset.fontId;
+            
+            item.innerHTML = `
+                <div>
+                    <span class="preset-name">${preset.fullName}</span>
+                </div>
+                <span class="preset-category preset-category-${preset.category}">${preset.category}</span>
+            `;
+
+            // Add click handler
+            item.addEventListener('click', () => this.selectPreset(preset));
+
+            // Double-click to select and close
+            item.addEventListener('dblclick', () => {
+                this.selectPreset(preset);
+                this.closePresetBrowser();
+            });
+
+            this.presetListContainer.appendChild(item);
+        });
+    }
+
+    /**
+     * Update preset info display
+     */
+    updatePresetInfo() {
+        if (this.presetCountEl) {
+            this.presetCountEl.textContent = `Presets: ${this.filteredPresets.length} / ${this.allPresets.length}`;
+        }
+    }
+
+    /**
+     * Select a preset and apply it to the current track
+     */
+    selectPreset(preset) {
+        console.log(`Selected preset: ${preset.fullName} (index: ${preset.index}, font: ${preset.fontId})`);
+
+        if (!this.app.audioEngine) {
+            console.warn('Audio engine not available');
+            return;
+        }
+
+        // Update the current track's instrument
+        const trackId = this.app.currentTrackId;
+        this.app.audioEngine.setTrackInstrument(
+            trackId,
+            preset.bank,
+            preset.preset,
+            preset.index,
+            preset.fontId
+        );
+
+        // Update preset selector dropdown
+        const presetSelector = document.getElementById('preset-selector');
+        if (presetSelector) {
+            presetSelector.value = preset.index;
+            presetSelector.disabled = false;
+        }
+
+        // Highlight selected preset in the list
+        const items = this.presetListContainer.querySelectorAll('.preset-item');
+        items.forEach(item => {
+            item.classList.remove('selected');
+            if (parseInt(item.dataset.index) === preset.index) {
+                item.classList.add('selected');
+            }
+        });
+
+        // Play a preview note
+        this.playPresetPreview(preset);
+    }
+
+    /**
+     * Play a preview note for the selected preset
+     */
+    playPresetPreview(preset) {
+        if (!this.app.audioEngine) return;
+
+        // Play middle C (MIDI 60) at medium velocity
+        const duration = 0.3;
+        const trackId = this.app.currentTrackId;
+        
+        this.app.audioEngine.playNote(60, duration, trackId, 80);
     }
 
     setGridDivisions(divisions) {
