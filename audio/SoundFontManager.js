@@ -325,13 +325,17 @@ export class SoundFontManager {
      * Get all presets from all loaded fonts with metadata
      */
     getAllPresets() {
+        console.log('SoundFontManager.getAllPresets() called');
+        console.log('  Number of loaded fonts:', this.fonts.size);
+        
         const presets = [];
         
         for (const [fontId, font] of this.fonts) {
-            for (let i = 0; i < font.presets.length; i++) {
-                const preset = font.presets[i];
+            for (let localIndex = 0; localIndex < font.presets.length; localIndex++) {
+                const preset = font.presets[localIndex];
                 presets.push({
-                    index: presets.length,
+                    globalIndex: presets.length,
+                    localIndex: localIndex,  // Add local index within the font
                     fontId: fontId,
                     fontName: font.name,
                     name: preset.name,
@@ -549,6 +553,75 @@ export class SoundFontManager {
     setStreamingMode(enabled) {
         this.useStreamingDecode = enabled;
         console.log(`SoundFontManager: Streaming mode ${enabled ? 'enabled' : 'disabled'}`);
+    }
+
+    /**
+     * Get ADSR parameters for a preset
+     * ADSR generators:
+     * - Gen 33: attackVolEnv
+     * - Gen 34: decayVolEnv
+     * - Gen 35: releaseVolEnv
+     * - Gen 36: sustainVolEnv
+     * @param {string} fontId - Font identifier
+     * @param {number} presetIndex - Preset index
+     * @returns {Object} ADSR parameters { attack, decay, sustain, release }
+     */
+    getPresetAdsrParams(fontId, presetIndex) {
+        const font = this.fonts.get(fontId);
+        if (!font) {
+            console.warn(`SoundFontManager: Font ${fontId} not found`);
+            return null;
+        }
+        
+        const preset = font.presets[presetIndex];
+        if (!preset || !preset.zones) {
+            console.warn(`SoundFontManager: Preset ${presetIndex} not found`);
+            return null;
+        }
+        
+        // Find the first non-global zone with an instrument to get ADSR params
+        for (const zone of preset.zones) {
+            if (zone.isGlobal) continue;
+            if (zone.instrumentIndex === undefined) continue;
+            
+            const generators = zone.generators;
+            if (!generators) continue;
+            
+            // Convert SF2 timecents to seconds
+            // timecents: 0 = 1 second, -1200 = 0.001 seconds, etc.
+            const timecentsToSeconds = (tc) => {
+                if (tc === undefined || tc === -32768) return 0.001; // Default
+                return Math.pow(2, tc / 1200);
+            };
+            
+            // Sustain is stored as attenuation in dB (0-144 dB)
+            // Convert to 0-1 scale (0 dB = 1.0, 144 dB = 0.0)
+            const attenuationToSustain = (attn) => {
+                if (attn === undefined || attn === -32768) return 0.7; // Default sustain
+                // Convert attenuation to linear 0-1 scale
+                const linear = Math.pow(10, -attn / 20);
+                return Math.max(0, Math.min(1, linear));
+            };
+            
+            const adsr = {
+                attack: timecentsToSeconds(generators[33]),  // attackVolEnv
+                decay: timecentsToSeconds(generators[34]),   // decayVolEnv
+                sustain: attenuationToSustain(generators[36]), // sustainVolEnv
+                release: timecentsToSeconds(generators[35])   // releaseVolEnv
+            };
+            
+            console.log(`SoundFontManager: ADSR params for preset ${presetIndex}:`, adsr);
+            return adsr;
+        }
+        
+        // No zone found, return default values
+        console.log(`SoundFontManager: No ADSR zone found for preset ${presetIndex}, using defaults`);
+        return {
+            attack: 0.01,
+            decay: 0.1,
+            sustain: 0.7,
+            release: 0.1
+        };
     }
 
     /**

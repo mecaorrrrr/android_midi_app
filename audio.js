@@ -80,10 +80,14 @@ export class AudioManager {
 
     /**
      * Load SF2 file
+     * @param {File} file - SF2 file to load
+     * @param {Object} options - Loading options
+     * @param {Function} options.onProgress - Progress callback ({ percent, message }) => void
      */
-    async loadSF2(file) {
+    async loadSF2(file, options = {}) {
         // Use legacy implementation for now to maintain compatibility
         this.legacyMode = true;
+        const { onProgress } = options;
         
         const { SF2Parser } = await import('./sf2parser.js');
         const ctx = (await this.init()).ctx;
@@ -95,8 +99,14 @@ export class AudioManager {
 
             console.log(`Parsed SF2: ${this.sf2Data.presets.length} presets, ${this.sf2Data.samples.length} samples`);
 
+            if (onProgress) {
+                onProgress({ percent: 30, message: 'Decoding samples...' });
+            }
+
             // Pre-decode samples to AudioBuffers
             this.sf2Buffers = {};
+            const totalSamples = this.sf2Data.samples.length;
+            
             for (let i = 0; i < this.sf2Data.samples.length; i++) {
                 const sample = this.sf2Data.samples[i];
                 if (sample.sampleType === 1 || sample.sampleType === 0) { // Mono samples
@@ -105,10 +115,20 @@ export class AudioManager {
                         this.sf2Buffers[i] = buffer;
                     }
                 }
+                
+                // Report progress
+                const percent = 30 + (70 * (i + 1) / totalSamples);
+                if (onProgress) {
+                    onProgress({ percent, message: `Decoding samples ${i + 1}/${totalSamples}` });
+                }
             }
 
             console.log(`Decoded ${Object.keys(this.sf2Buffers).length} samples`);
             this.mode = 'sf2';
+            
+            if (onProgress) {
+                onProgress({ percent: 100, message: 'Complete' });
+            }
             
             // Initialize all tracks to first preset
             for (let i = 0; i < 8; i++) {

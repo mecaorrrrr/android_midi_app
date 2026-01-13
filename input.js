@@ -674,8 +674,13 @@ export class InputManager {
                 notes.push({ time, pitch, duration, velocity });
 
                 // Play feedback
+                // Also use the new AudioEngine if available
                 if (this.app.audio && this.app.audio.playNote) {
                     this.app.audio.playNote(pitch, 0.25, trackId, velocity);
+                }
+                // Use AudioEngine for SF2 playback
+                if (this.app.audioEngine && typeof this.app.audioEngine.playNote === 'function') {
+                    this.app.audioEngine.playNote(pitch, 0.25, trackId, velocity);
                 }
             }
         } catch (e) {

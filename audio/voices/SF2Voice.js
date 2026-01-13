@@ -4,9 +4,13 @@
  */
 
 export class SF2Voice {
-    constructor(ctx, output) {
+    constructor(ctx, output, soundFontManager = null, adsrParams = null) {
         this.ctx = ctx;
         this.output = output;
+        this.soundFontManager = soundFontManager;
+        
+        // Use provided ADSR params or use class defaults
+        this.customAdsrParams = adsrParams;
         
         this.voiceId = null;
         this.trackId = 0;
@@ -43,67 +47,126 @@ export class SF2Voice {
      * Start playing a sample
      */
     async start(sampleInfo, midi, velocity, duration) {
+        console.log(`[DEBUG] SF2Voice.start: called with sampleInfo keys=${Object.keys(sampleInfo).join(', ')}`);
         if (this.isPlaying) {
             this.stop();
         }
 
-        const { buffer, sample, zone, presetZone } = sampleInfo;
+        const { sample, zone, presetZone, fontData } = sampleInfo;
+        console.log(`[DEBUG] SF2Voice.start: sample=${sample?.name}, fontData=${!!fontData}`);
         
-        // Create nodes
-        this.source = this.ctx.createBufferSource();
-        this.source.buffer = buffer;
-        
-        this.gainNode = this.ctx.createGain();
-        this.filter = this.ctx.createBiquadFilter();
-        
-        // Calculate ADSR from generators
-        this.calculateEnvelope(zone, presetZone);
-        
-        // Configure filter if available
-        this.configureFilter(zone, presetZone);
-        
-        // Calculate pitch
-        const detune = this.calculateDetune(midi, sample, zone, presetZone);
-        this.source.detune.value = detune;
-        
-        // Handle looping
-        this.configureLoop(sample, zone);
-        
-        // Connect: Source -> Filter -> Envelope -> Output
-        if (this.filterEnabled) {
-            this.source.connect(this.filter);
-            this.filter.connect(this.gainNode);
-        } else {
-            this.source.connect(this.gainNode);
+        if (!sample) {
+            console.error("SF2Voice.start: sample is missing!");
+            return;
         }
-        this.gainNode.connect(this.output);
         
-        // Set initial gain
-        const initialGain = (velocity / 127) * this.sustainLevel;
-        this.gainNode.gain.setValueAtTime(0, this.ctx.currentTime);
-        
-        // Start envelope
-        this.startEnvelope(initialGain, duration);
-        
-        // Start source
-        this.source.start(0);
-        this.startTime = this.ctx.currentTime;
-        this.isPlaying = true;
-        this.isReleased = false;
-        
-        // Set up end callback
-        this.source.onended = () => {
-            this.isPlaying = false;
-            if (this.onEnded) {
-                this.onEnded();
+        // Get or create buffer from SoundFontManager
+        let buffer = null;
+        if (this.soundFontManager && fontData) {
+            try {
+                // Get sample index - either from samples_idx or by searching
+                let sampleIndex = sample.samples_idx;
+                if (sampleIndex === undefined && fontData.samples) {
+                    sampleIndex = fontData.samples.indexOf(sample);
+                }
+                
+                if (sampleIndex !== undefined && sampleIndex >= 0) {
+                    const bufferInfo = await this.soundFontManager.getOrCreateBuffer(
+                        fontData.id, 
+                        sampleIndex, 
+                        sample
+                    );
+                    buffer = bufferInfo;
+                    console.log(`[DEBUG] SF2Voice.start: buffer created/retrieved successfully for sample index ${sampleIndex}`);
+                } else {
+                    console.warn("SF2Voice.start: Could not determine sample index");
+                }
+            } catch (e) {
+                console.error("SF2Voice.start: Failed to get buffer:", e);
             }
-        };
+        } else if (sample.buffer) {
+            // Fallback for pre-loaded buffers
+            buffer = sample.buffer;
+        }
+        
+        if (!buffer) {
+            console.error("SF2Voice.start: buffer is still missing! sample:", sample.name);
+            return;
+        }
+        
+        try {
+            // Create nodes
+            this.source = this.ctx.createBufferSource();
+            this.source.buffer = buffer;
+            console.log("[DEBUG] SF2Voice.start: source created successfully");
+            
+            this.gainNode = this.ctx.createGain();
+            this.filter = this.ctx.createBiquadFilter();
+            console.log("[DEBUG] SF2Voice.start: nodes created successfully");
+            
+            // Calculate ADSR from generators
+            this.calculateEnvelope(zone, presetZone, this.customAdsrParams);
+            
+            // Configure filter if available
+            this.configureFilter(zone, presetZone);
+            
+            // Calculate pitch
+            const detune = this.calculateDetune(midi, sample, zone, presetZone);
+            this.source.detune.value = detune;
+            
+            // Handle looping
+            this.configureLoop(sample, zone);
+            
+            // Connect: Source -> Filter -> Envelope -> Output
+            if (this.filterEnabled) {
+                this.source.connect(this.filter);
+                this.filter.connect(this.gainNode);
+            } else {
+                this.source.connect(this.gainNode);
+            }
+            this.gainNode.connect(this.output);
+            
+            // Set initial gain
+            const initialGain = (velocity / 127) * this.sustainLevel;
+            this.gainNode.gain.setValueAtTime(0, this.ctx.currentTime);
+            
+            // Start envelope
+            this.startEnvelope(initialGain, duration);
+            
+            // Start source
+            this.source.start(0);
+            this.startTime = this.ctx.currentTime;
+            this.isPlaying = true;
+            this.isReleased = false;
+            
+            // Set up end callback
+            this.source.onended = () => {
+                this.isPlaying = false;
+                if (this.onEnded) {
+                    this.onEnded();
+                }
+            };
+            
+            console.log("[DEBUG] SF2Voice.start: playback started successfully");
+        } catch (e) {
+            console.error("SF2Voice.start: Error during playback:", e);
+        }
     }
 
     /**
-     * Calculate ADSR parameters from SF2 generators
+     * Calculate ADSR parameters from SF2 generators or custom params
      */
-    calculateEnvelope(zone, presetZone) {
+    calculateEnvelope(zone, presetZone, customParams = null) {
+        // If custom ADSR params are provided, use them
+        if (customParams) {
+            this.attackTime = customParams.attack || 0.001;
+            this.decayTime = customParams.decay || 0.1;
+            this.sustainLevel = customParams.sustain !== undefined ? customParams.sustain : 0.7;
+            this.releaseTimeValue = customParams.release || 0.1;
+            return;
+        }
+        
+        // Otherwise, calculate from SF2 generators
         // Generator 33: attackVolEnv (timecents, -12000 to 0)
         const attackGen = this.getGeneratorValue(zone, presetZone, 33);
         this.attackTime = attackGen !== null ? this.timecentsToSeconds(attackGen) : 0.001;
@@ -221,7 +284,14 @@ export class SF2Voice {
         const now = this.ctx.currentTime;
         const attackEnd = now + this.attackTime;
         const decayEnd = attackEnd + this.decayTime;
-        const releaseStart = now + duration - this.releaseTimeValue;
+        
+        // Calculate release start - ensure it's after decay phase
+        // This prevents release from starting before attack/decay completes
+        let releaseStart = now + duration - this.releaseTimeValue;
+        if (releaseStart < decayEnd) {
+            // If duration is too short, cap at decay end
+            releaseStart = decayEnd;
+        }
         
         // Attack
         this.gainNode.gain.setValueAtTime(0, now);
@@ -239,14 +309,18 @@ export class SF2Voice {
             decayEnd
         );
         
-        // Schedule release
-        this.gainNode.gain.setValueAtTime(
-            targetGain * this.sustainLevel, 
-            releaseStart
-        );
-        this.gainNode.gain.linearRampToValueAtTime(0, releaseStart + this.releaseTimeValue);
-        
-        this.releaseTime = releaseStart + this.releaseTimeValue;
+        // Schedule release (only if releaseStart is after decayEnd)
+        if (releaseStart >= decayEnd) {
+            this.gainNode.gain.setValueAtTime(
+                targetGain * this.sustainLevel, 
+                releaseStart
+            );
+            this.gainNode.gain.linearRampToValueAtTime(0, releaseStart + this.releaseTimeValue);
+            this.releaseTime = releaseStart + this.releaseTimeValue;
+        } else {
+            // If duration is too short, release immediately after decay
+            this.releaseTime = decayEnd + 0.01;
+        }
     }
 
     /**

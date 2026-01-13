@@ -148,56 +148,7 @@
             color: #dfe6e9;
             font-size: 14px;
         }
-        .preset-filter-select {
-            padding: 10px;
-            border: 1px solid #555;
-            border-radius: 5px;
-            background: #1e272e;
-            color: #dfe6e9;
-            font-size: 14px;
-        }
-        .preset-list {
-            max-height: 400px;
-            overflow-y: auto;
-            border: 1px solid #444;
-            border-radius: 5px;
-            background: #1e272e;
-        }
-        .preset-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            padding: 10px 15px;
-            border-bottom: 1px solid #333;
-            cursor: pointer;
-            transition: background-color 0.2s;
-        }
-        .preset-item:hover {
-            background-color: rgba(9, 132, 227, 0.2);
-        }
-        .preset-item.selected {
-            background-color: rgba(9, 132, 227, 0.4);
-            border-left: 3px solid #0984e3;
-        }
-        .preset-item .preset-name {
-            font-weight: 500;
-        }
-        .preset-item .preset-bank {
-            font-size: 12px;
-            color: #b2bec3;
-        }
-        .preset-item .preset-category {
-            font-size: 11px;
-            padding: 2px 6px;
-            border-radius: 3px;
-            background: #2d3436;
-            color: #b2bec3;
-        }
-        .preset-category-piano { background: #e17055 !important; color: white !important; }
-        .preset-category-chromatic { background: #fdcb6e !important; color: #2d3436 !important; }
-        .preset-category-drums { background: #d63031 !important; color: white !important; }
-        .preset-category-gm { background: #0984e3 !important; color: white !important; }
-        .preset-category-user { background: #00b894 !important; color: white !important; }
+
         .preset-info {
             display: flex;
             gap: 20px;
@@ -211,6 +162,99 @@
             display: flex;
             align-items: center;
             gap: 5px;
+        }
+        /* Loading Overlay Styles */
+        .loading-overlay {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.8);
+            z-index: 4000;
+            justify-content: center;
+            align-items: center;
+        }
+        .loading-content {
+            text-align: center;
+            color: #dfe6e9;
+        }
+        .loading-spinner {
+            width: 50px;
+            height: 50px;
+            border: 4px solid #2d3436;
+            border-top: 4px solid #0984e3;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 15px;
+        }
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        .loading-message {
+            font-size: 16px;
+            margin-bottom: 15px;
+        }
+        .loading-progress-container {
+            width: 300px;
+            height: 8px;
+            background-color: #2d3436;
+            border-radius: 4px;
+            overflow: hidden;
+            margin: 0 auto 10px;
+        }
+        .loading-progress-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #0984e3, #00cec9);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        .loading-percent {
+            font-size: 14px;
+            color: #b2bec3;
+        }
+        /* ADSR Controls Styles */
+        .adsr-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
+            margin: 20px 0;
+        }
+        .adsr-param {
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        .adsr-param label {
+            font-size: 14px;
+            color: #dfe6e9;
+        }
+        .adsr-param input[type="range"] {
+            width: 100%;
+            height: 8px;
+            -webkit-appearance: none;
+            background: linear-gradient(90deg, #0984e3, #00cec9);
+            border-radius: 4px;
+            outline: none;
+        }
+        .adsr-param input[type="range"]::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 18px;
+            height: 18px;
+            background: #fff;
+            border-radius: 50%;
+            cursor: pointer;
+            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+        }
+        .adsr-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 10px;
+        }
+        .adsr-buttons button {
+            flex: 1;
         }
     </style>
 </head>
@@ -238,6 +282,19 @@
                 <button id="btn-preset-browser" class="secondary-btn">🎹 Presets</button>
                 <select id="preset-selector" class="preset-select" disabled>
                     <option value="">-- No SF2 --</option>
+                </select>
+                <button id="btn-adsr" class="secondary-btn">🎛️ ADSR</button>
+                <button id="btn-filter" class="secondary-btn">🔊 Filter</button>
+                <select id="osc-preset-selector" class="preset-select">
+                    <option value="Sine">Sine</option>
+                    <option value="Square">Square</option>
+                    <option value="Sawtooth">Sawtooth</option>
+                    <option value="Triangle">Triangle</option>
+                    <option value="Synth Lead">Synth Lead</option>
+                    <option value="Synth Bass">Synth Bass</option>
+                    <option value="Pad">Pad</option>
+                    <option value="Pluck">Pluck</option>
+                    <option value="Bell">Bell</option>
                 </select>
                 <div id="status-display">Ready</div>
             </div>
@@ -301,14 +358,6 @@
             <div class="preset-browser">
                 <div class="preset-search-box">
                     <input type="text" id="preset-search-input" class="preset-search-input" placeholder="Search presets...">
-                    <select id="preset-category-filter" class="preset-filter-select">
-                        <option value="all">All Categories</option>
-                        <option value="piano">Piano</option>
-                        <option value="chromatic">Chromatic</option>
-                        <option value="drums">Drums</option>
-                        <option value="gm">GM</option>
-                        <option value="user">User</option>
-                    </select>
                 </div>
                 <div class="preset-info">
                     <span id="preset-count">Presets: 0</span>
@@ -320,9 +369,80 @@
                         <span class="preset-name">No sound font loaded</span>
                     </div>
                 </div>
+                <div class="preset-pagination">
+                    <button id="btn-preset-prev" class="preset-pagination-btn" disabled>&lt; Prev</button>
+                    <span id="preset-page-info">Page 1/1</span>
+                    <button id="btn-preset-next" class="preset-pagination-btn" disabled>Next &gt;</button>
+                </div>
             </div>
             <div class="modal-actions">
                 <button id="btn-close-presetbrowser" class="secondary-btn">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- ADSR Envelope Modal -->
+    <div id="adsr-modal" class="modal">
+        <div class="modal-content glass-panel" style="max-width: 400px;">
+            <h2>ADSR Envelope</h2>
+            <div class="adsr-controls">
+                <div class="adsr-param">
+                    <label for="adsr-attack">Attack: <span id="adsr-attack-val">0.01</span>s</label>
+                    <input type="range" id="adsr-attack" min="0.001" max="2" step="0.001" value="0.01">
+                </div>
+                <div class="adsr-param">
+                    <label for="adsr-decay">Decay: <span id="adsr-decay-val">0.1</span>s</label>
+                    <input type="range" id="adsr-decay" min="0.01" max="2" step="0.01" value="0.1">
+                </div>
+                <div class="adsr-param">
+                    <label for="adsr-sustain">Sustain: <span id="adsr-sustain-val">0.7</span></label>
+                    <input type="range" id="adsr-sustain" min="0" max="1" step="0.01" value="0.7">
+                </div>
+                <div class="adsr-param">
+                    <label for="adsr-release">Release: <span id="adsr-release-val">0.1</span>s</label>
+                    <input type="range" id="adsr-release" min="0.01" max="3" step="0.01" value="0.1">
+                </div>
+                <div class="adsr-buttons">
+                    <button id="btn-adsr-preview" class="secondary-btn">Preview</button>
+                    <button id="btn-adsr-reset" class="secondary-btn">Reset</button>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button id="btn-close-adsr" class="secondary-btn">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Filter Modal -->
+    <div id="filter-modal" class="modal">
+        <div class="modal-content glass-panel" style="max-width: 400px;">
+            <h2>Filter</h2>
+            <div class="adsr-controls">
+                <div class="adsr-param">
+                    <label for="filter-type">Type</label>
+                    <select id="filter-type" class="preset-select" style="width: 100%;">
+                        <option value="lowpass">Lowpass</option>
+                        <option value="highpass">Highpass</option>
+                        <option value="bandpass">Bandpass</option>
+                        <option value="notch">Notch</option>
+                        <option value="allpass">Allpass</option>
+                    </select>
+                </div>
+                <div class="adsr-param">
+                    <label for="filter-cutoff">Cutoff: <span id="filter-cutoff-val">20000</span>Hz</label>
+                    <input type="range" id="filter-cutoff" min="20" max="20000" step="10" value="20000">
+                </div>
+                <div class="adsr-param">
+                    <label for="filter-resonance">Resonance: <span id="filter-resonance-val">1</span></label>
+                    <input type="range" id="filter-resonance" min="0.1" max="20" step="0.1" value="1">
+                </div>
+                <div class="adsr-buttons">
+                    <button id="btn-filter-preview" class="secondary-btn">Preview</button>
+                    <button id="btn-filter-reset" class="secondary-btn">Reset</button>
+                </div>
+            </div>
+            <div class="modal-actions">
+                <button id="btn-close-filter" class="secondary-btn">Close</button>
             </div>
         </div>
     </div>

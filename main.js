@@ -65,26 +65,53 @@ class App {
         // SF2 File Loading
         document.getElementById('sf2-file-input').addEventListener('change', async (e) => {
             if (e.target.files.length > 0) {
+                // Show loading UI
+                this.ui.showLoading('Loading SF2...');
+                
                 document.getElementById('status-display').textContent = "Loading SF2...";
-                const success = await this.audio.loadSF2(e.target.files[0]);
+                
+                // Progress callback for loading UI
+                const progressCallback = ({ percent, message }) => {
+                    this.ui.updateLoadingProgress(percent, message || 'Loading SF2...');
+                };
+                
+                // Use the new AudioEngine directly
+                const audioEngine = await this.getAudioEngine();
+                audioEngine.setProgressCallback(progressCallback);
+                
+                const success = await audioEngine.loadSF2(e.target.files[0]);
+                
                 if (success) {
                     document.getElementById('status-display').textContent = "SF2 Loaded";
-                    this.populatePresetSelector();
-                    this.validateTracksAgainstSF2();
+                    await this.populatePresetSelector();
+                    await this.validateTracksAgainstSF2();
+                    
+                    // Load ADSR parameters from SF2 for the current track
+                    const adsrParams = audioEngine.getCurrentPresetAdsrParams();
+                    if (adsrParams && this.ui) {
+                        this.ui.adsrParams = adsrParams;
+                        console.log('main.js: ADSR params loaded from SF2:', adsrParams);
+                    }
+                    
                     // Update preset browser if open
                     if (this.ui && typeof this.ui.loadPresets === 'function') {
-                        this.ui.loadPresets();
+                        await this.ui.loadPresets();
                     }
                 } else {
                     document.getElementById('status-display').textContent = "SF2 Load Failed";
                 }
+                
+                // Hide loading UI
+                this.ui.hideLoading();
             }
         });
 
-        document.getElementById('preset-selector').addEventListener('change', (e) => {
+        document.getElementById('preset-selector').addEventListener('change', async (e) => {
             const idx = parseInt(e.target.value);
             if (!isNaN(idx) && idx >= 0) {
-                const presets = this.audio.getPresets();
+                // Use new AudioEngine
+                const audioEngine = await this.getAudioEngine();
+                const presets = audioEngine.getPresets();
                 if (presets && presets[idx]) {
                     const preset = presets[idx];
                     
@@ -97,11 +124,11 @@ class App {
                     track.program = preset.preset;
                     track.presetIndex = idx;
 
-                    this.audio.selectPreset(this.currentTrackId, idx);
+                    audioEngine.selectPreset(this.currentTrackId, idx);
                     console.log(`[UI] Track ${this.currentTrackId + 1} updated to Bank:${track.bank} Program:${track.program} Index:${idx}`);
 
                     // Preview Note
-                    this.audio.playNote(60, 0.5, this.currentTrackId);
+                    audioEngine.playNote(60, 0.5, this.currentTrackId);
                 }
             }
         });
@@ -527,7 +554,9 @@ class App {
         }
     }
 
-    updateTrackListUI() {
+    async updateTrackListUI() {
+        const audioEngine = await this.getAudioEngine();
+        const presets = audioEngine.getPresets();
         const tbody = document.getElementById('track-list-body');
         tbody.innerHTML = '';
 
@@ -538,19 +567,12 @@ class App {
                 tr.classList.add('active');
             }
 
-            // Determine Instrument Name
+            // Determine Instrument Name from AudioEngine
             let instrumentName = "Sine Wave";
-            if (this.audio.mode === 'sf2' && this.audio.sf2Data) {
-                const presets = this.audio.getPresets();
-                let p = null;
-                // Try to find by index first, then bank/prog
-                if (track.presetIndex !== undefined && presets[track.presetIndex]) {
-                    p = presets[track.presetIndex];
-                } else {
-                    p = presets.find(pr => pr.bank === track.bank && pr.preset === track.program);
-                }
+            if (audioEngine.mode === 'sf2' && presets.length > 0) {
+                const p = presets[track.presetIndex] || presets.find(pr => pr.bank === track.bank && pr.preset === track.program);
                 if (p) instrumentName = p.name;
-            } else if (this.audio.mode === 'sfz') {
+            } else if (audioEngine.mode === 'sfz') {
                 instrumentName = "SFZ Sample";
             }
 
@@ -587,8 +609,10 @@ class App {
         });
     }
 
-    validateTracksAgainstSF2() {
-        const presets = this.audio.getPresets();
+    async validateTracksAgainstSF2() {
+        const audioEngine = await this.getAudioEngine();
+        const presets = audioEngine.getPresets();
+        
         if (!presets || presets.length === 0) return;
 
         const defaultPreset = presets[0];
@@ -605,14 +629,14 @@ class App {
                 t.bank = defaultPreset.bank;
                 t.program = defaultPreset.preset;
                 t.presetIndex = 0;
-                this.audio.selectPreset(t.id, 0);
+                audioEngine.selectPreset(t.id, 0);
                 console.log(`Track ${t.id} auto-corrected to ${t.bank}:${t.program} (${defaultPreset.name})`);
                 updatedCount++;
             } else {
                 // Found - Ensure index is consistent
                 const idx = presets.indexOf(matchingPreset);
                 t.presetIndex = idx;
-                this.audio.selectPreset(t.id, idx);
+                audioEngine.selectPreset(t.id, idx);
             }
         });
 
@@ -622,14 +646,15 @@ class App {
         }
     }
 
-    updateTrackUI() {
+    async updateTrackUI() {
+        const audioEngine = await this.getAudioEngine();
         const track = this.songData.tracks[this.currentTrackId];
+        const presets = audioEngine.getPresets();
 
         // Update Preset Selector if SF2 loaded
-        if (this.audio.mode === 'sf2' && this.audio.sf2Data) {
-            const presetSel = document.getElementById('preset-selector');
-            const presets = this.audio.getPresets();
-            
+        const presetSel = document.getElementById('preset-selector');
+        
+        if (audioEngine.mode === 'sf2' && presets.length > 0) {
             // Find index matching track bank/program
             const matchingPreset = presets.find(p => 
                 p.bank === track.bank && p.preset === track.program
@@ -708,9 +733,9 @@ class App {
         URL.revokeObjectURL(url);
     }
 
-    loadProject(file) {
+    async loadProject(file) {
         const reader = new FileReader();
-        reader.onload = (e) => {
+        reader.onload = async (e) => {
             try {
                 const project = JSON.parse(e.target.result);
                 if (project.version !== 1) {
@@ -729,13 +754,14 @@ class App {
                 }
 
                 // Sync Instruments to Audio Engine
-                if (this.audio.sf2Data) {
+                const audioEngine = await this.getAudioEngine();
+                if (audioEngine.soundFontManager && audioEngine.soundFontManager.getAllPresets().length > 0) {
                     this.validateTracksAgainstSF2();
                 } else {
                     // Restore values even if no SF2 (will validate when SF2 is loaded)
                     this.songData.tracks.forEach(t => {
                         const idx = t.presetIndex !== undefined ? t.presetIndex : -1;
-                        this.audio.setTrackInstrument(t.id, t.bank || 0, t.program || 0, idx);
+                        audioEngine.setTrackInstrument(t.id, t.bank || 0, t.program || 0, idx);
                     });
                 }
 
@@ -841,7 +867,8 @@ class App {
         URL.revokeObjectURL(url);
     }
 
-    checkAndPlayNotes(start, end) {
+    async checkAndPlayNotes(start, end) {
+        const audioEngine = await this.getAudioEngine();
         const anySolo = this.songData.tracks.some(t => t.solo);
 
         for (const track of this.songData.tracks) {
@@ -854,15 +881,16 @@ class App {
                 if (note.time >= start && note.time < end) {
                     const currentBpm = this.transport.getBpmAt(note.time);
                     const velocity = note.velocity !== undefined ? note.velocity : 100;
-                    this.audio.playNote(note.pitch, note.duration * (60 / currentBpm), track.id, velocity);
+                    audioEngine.playNote(note.pitch, note.duration * (60 / currentBpm), track.id, velocity);
                 }
             }
         }
     }
 
-    populatePresetSelector() {
+    async populatePresetSelector() {
+        const audioEngine = await this.getAudioEngine();
+        const presets = audioEngine.getPresets();
         const selector = document.getElementById('preset-selector');
-        const presets = this.audio.getPresets();
         
         // Sort presets by Bank then Program
         const sortedPresets = [...presets].sort((a, b) => {
@@ -873,7 +901,7 @@ class App {
         selector.innerHTML = '';
         sortedPresets.forEach((preset) => {
             const opt = document.createElement('option');
-            opt.value = preset.index;
+            opt.value = preset.globalIndex;  // Use globalIndex for the value
             opt.textContent = `${preset.bank}:${preset.preset} ${preset.name}`;
             selector.appendChild(opt);
         });
@@ -883,14 +911,15 @@ class App {
         // Select first preset (sorted) for current track
         if (sortedPresets.length > 0) {
             const first = sortedPresets[0];
-            this.audio.selectPreset(this.currentTrackId, first.index);
-            selector.value = first.index;
+            // Use globalIndex to select and store
+            audioEngine.selectPreset(this.currentTrackId, first.globalIndex);
+            selector.value = first.globalIndex;
             
-            // Update current track data
+            // Update current track data - store globalIndex
             const track = this.songData.tracks[this.currentTrackId];
             track.bank = first.bank;
             track.program = first.preset;
-            track.presetIndex = first.index;
+            track.presetIndex = first.globalIndex;
         }
     }
 }

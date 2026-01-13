@@ -31,12 +31,91 @@ export class UIManager {
 
         // Preset Browser State
         this.presetSearchQuery = '';
-        this.presetCategoryFilter = 'all';
         this.allPresets = [];
         this.filteredPresets = [];
+        
+        // Pagination State
+        this.presetCurrentPage = 1;
+        this.presetPageSize = 12; // 4 columns × 3 rows
+
+        // Loading State
+        this.isLoading = false;
+        this.loadingProgress = 0;
+        this.loadingMessage = '';
 
         // Initialize preset browser event listeners
         this.initPresetBrowser();
+        this.initLoadingUI();
+    }
+
+    /**
+     * Initialize loading UI elements
+     */
+    initLoadingUI() {
+        // Get or create loading overlay
+        this.loadingOverlay = document.getElementById('loading-overlay');
+        if (!this.loadingOverlay) {
+            this.loadingOverlay = document.createElement('div');
+            this.loadingOverlay.id = 'loading-overlay';
+            this.loadingOverlay.className = 'loading-overlay';
+            this.loadingOverlay.innerHTML = `
+                <div class="loading-content">
+                    <div class="loading-spinner"></div>
+                    <div class="loading-message">Loading...</div>
+                    <div class="loading-progress-container">
+                        <div class="loading-progress-bar" id="loading-progress-bar"></div>
+                    </div>
+                    <div class="loading-percent" id="loading-percent">0%</div>
+                </div>
+            `;
+            document.body.appendChild(this.loadingOverlay);
+        }
+        
+        this.loadingProgressBar = document.getElementById('loading-progress-bar');
+        this.loadingPercent = document.getElementById('loading-percent');
+        this.loadingMessageEl = this.loadingOverlay.querySelector('.loading-message');
+    }
+
+    /**
+     * Show loading overlay
+     */
+    showLoading(message = 'Loading...') {
+        if (!this.loadingOverlay) {
+            this.initLoadingUI();
+        }
+        this.isLoading = true;
+        this.loadingMessage = message;
+        this.loadingProgress = 0;
+        this.loadingMessageEl.textContent = message;
+        this.loadingProgressBar.style.width = '0%';
+        this.loadingPercent.textContent = '0%';
+        this.loadingOverlay.style.display = 'flex';
+    }
+
+    /**
+     * Hide loading overlay
+     */
+    hideLoading() {
+        if (this.loadingOverlay) {
+            this.loadingOverlay.style.display = 'none';
+        }
+        this.isLoading = false;
+        this.loadingProgress = 100;
+    }
+
+    /**
+     * Update loading progress
+     */
+    updateLoadingProgress(percent, message = null) {
+        if (!this.isLoading) return;
+        
+        this.loadingProgress = Math.max(0, Math.min(100, percent));
+        this.loadingProgressBar.style.width = `${this.loadingProgress}%`;
+        this.loadingPercent.textContent = `${Math.round(this.loadingProgress)}%`;
+        
+        if (message) {
+            this.loadingMessageEl.textContent = message;
+        }
     }
 
     /**
@@ -47,10 +126,51 @@ export class UIManager {
         this.presetBrowserModal = document.getElementById('preset-browser-modal');
         this.presetListContainer = document.getElementById('preset-list');
         this.presetSearchInput = document.getElementById('preset-search-input');
-        this.presetCategoryFilterSelect = document.getElementById('preset-category-filter');
         this.presetCountEl = document.getElementById('preset-count');
         this.presetFontNameEl = document.getElementById('preset-font-name');
         this.presetMemoryEl = document.getElementById('preset-memory');
+        
+        // Pagination elements
+        this.btnPresetPrev = document.getElementById('btn-preset-prev');
+        this.btnPresetNext = document.getElementById('btn-preset-next');
+        this.presetPageInfoEl = document.getElementById('preset-page-info');
+
+        // ADSR Modal elements
+        this.adsrModal = document.getElementById('adsr-modal');
+        this.btnAdsr = document.getElementById('btn-adsr');
+        this.btnCloseAdsr = document.getElementById('btn-close-adsr');
+        this.btnAdsrPreview = document.getElementById('btn-adsr-preview');
+        this.btnAdsrReset = document.getElementById('btn-adsr-reset');
+        
+        // ADSR sliders
+        this.adsrAttackSlider = document.getElementById('adsr-attack');
+        this.adsrDecaySlider = document.getElementById('adsr-decay');
+        this.adsrSustainSlider = document.getElementById('adsr-sustain');
+        this.adsrReleaseSlider = document.getElementById('adsr-release');
+        
+        // ADSR value displays
+        this.adsrAttackVal = document.getElementById('adsr-attack-val');
+        this.adsrDecayVal = document.getElementById('adsr-decay-val');
+        this.adsrSustainVal = document.getElementById('adsr-sustain-val');
+        this.adsrReleaseVal = document.getElementById('adsr-release-val');
+        
+        // ADSR state
+        this.adsrParams = {
+            attack: 0.01,
+            decay: 0.1,
+            sustain: 0.7,
+            release: 0.1
+        };
+        
+        // Filter state
+        this.filterParams = {
+            type: 'lowpass',
+            cutoff: 20000,
+            resonance: 1
+        };
+        
+        this.initAdsrModal();
+        this.initFilterModal();
 
         // Open preset browser button
         const btnPresetBrowser = document.getElementById('btn-preset-browser');
@@ -68,16 +188,17 @@ export class UIManager {
         if (this.presetSearchInput) {
             this.presetSearchInput.addEventListener('input', (e) => {
                 this.presetSearchQuery = e.target.value;
+                this.presetCurrentPage = 1; // Reset to first page on search
                 this.filterPresets();
             });
         }
 
-        // Category filter
-        if (this.presetCategoryFilterSelect) {
-            this.presetCategoryFilterSelect.addEventListener('change', (e) => {
-                this.presetCategoryFilter = e.target.value;
-                this.filterPresets();
-            });
+        // Pagination buttons
+        if (this.btnPresetPrev) {
+            this.btnPresetPrev.addEventListener('click', () => this.goToPresetPage(this.presetCurrentPage - 1));
+        }
+        if (this.btnPresetNext) {
+            this.btnPresetNext.addEventListener('click', () => this.goToPresetPage(this.presetCurrentPage + 1));
         }
 
         // Close modal when clicking outside
@@ -87,6 +208,356 @@ export class UIManager {
                     this.closePresetBrowser();
                 }
             });
+        }
+    }
+
+    /**
+     * Initialize ADSR modal UI and event listeners
+     */
+    initAdsrModal() {
+        // Open button
+        if (this.btnAdsr) {
+            this.btnAdsr.addEventListener('click', () => this.openAdsrModal());
+        }
+        
+        // Close button
+        if (this.btnCloseAdsr) {
+            this.btnCloseAdsr.addEventListener('click', () => this.closeAdsrModal());
+        }
+        
+        // Close on background click
+        if (this.adsrModal) {
+            this.adsrModal.addEventListener('click', (e) => {
+                if (e.target === this.adsrModal) {
+                    this.closeAdsrModal();
+                }
+            });
+        }
+        
+        // Preview button
+        if (this.btnAdsrPreview) {
+            this.btnAdsrPreview.addEventListener('click', () => this.previewAdsr());
+        }
+        
+        // Reset button
+        if (this.btnAdsrReset) {
+            this.btnAdsrReset.addEventListener('click', () => this.resetAdsr());
+        }
+        
+        // Slider event listeners
+        if (this.adsrAttackSlider) {
+            this.adsrAttackSlider.addEventListener('input', (e) => {
+                this.adsrParams.attack = parseFloat(e.target.value);
+                this.adsrAttackVal.textContent = this.adsrParams.attack.toFixed(3);
+                this.updateVoiceAdsr();
+            });
+        }
+        
+        if (this.adsrDecaySlider) {
+            this.adsrDecaySlider.addEventListener('input', (e) => {
+                this.adsrParams.decay = parseFloat(e.target.value);
+                this.adsrDecayVal.textContent = this.adsrParams.decay.toFixed(2);
+                this.updateVoiceAdsr();
+            });
+        }
+        
+        if (this.adsrSustainSlider) {
+            this.adsrSustainSlider.addEventListener('input', (e) => {
+                this.adsrParams.sustain = parseFloat(e.target.value);
+                this.adsrSustainVal.textContent = this.adsrParams.sustain.toFixed(2);
+                this.updateVoiceAdsr();
+            });
+        }
+        
+        if (this.adsrReleaseSlider) {
+            this.adsrReleaseSlider.addEventListener('input', (e) => {
+                this.adsrParams.release = parseFloat(e.target.value);
+                this.adsrReleaseVal.textContent = this.adsrParams.release.toFixed(2);
+                this.updateVoiceAdsr();
+            });
+        }
+        
+        console.log('UIManager: ADSR modal initialized');
+    }
+
+    /**
+     * Open the ADSR modal
+     */
+    async openAdsrModal() {
+        if (!this.adsrModal) return;
+        
+        // Try to load ADSR params from SF2 if available
+        try {
+            const audioEngine = await this.app.getAudioEngine();
+            if (audioEngine && audioEngine.mode === 'sf2') {
+                const sf2AdsrParams = audioEngine.getCurrentPresetAdsrParams();
+                if (sf2AdsrParams) {
+                    this.adsrParams = sf2AdsrParams;
+                    console.log('openAdsrModal: Loaded ADSR from SF2:', sf2AdsrParams);
+                }
+            }
+        } catch (e) {
+            console.warn('openAdsrModal: Failed to load ADSR from SF2:', e);
+        }
+        
+        // Update slider values to match current params
+        if (this.adsrAttackSlider) {
+            this.adsrAttackSlider.value = this.adsrParams.attack;
+            this.adsrAttackVal.textContent = this.adsrParams.attack.toFixed(3);
+        }
+        if (this.adsrDecaySlider) {
+            this.adsrDecaySlider.value = this.adsrParams.decay;
+            this.adsrDecayVal.textContent = this.adsrParams.decay.toFixed(2);
+        }
+        if (this.adsrSustainSlider) {
+            this.adsrSustainSlider.value = this.adsrParams.sustain;
+            this.adsrSustainVal.textContent = this.adsrParams.sustain.toFixed(2);
+        }
+        if (this.adsrReleaseSlider) {
+            this.adsrReleaseSlider.value = this.adsrParams.release;
+            this.adsrReleaseVal.textContent = this.adsrParams.release.toFixed(2);
+        }
+        
+        this.adsrModal.style.display = 'flex';
+        console.log('ADSR modal opened');
+    }
+
+    /**
+     * Close the ADSR modal
+     */
+    closeAdsrModal() {
+        if (!this.adsrModal) return;
+        this.adsrModal.style.display = 'none';
+        console.log('ADSR modal closed');
+    }
+
+    /**
+     * Preview the current ADSR settings
+     */
+    previewAdsr() {
+        if (!this.app.audioEngine) return;
+        
+        const trackId = this.app.currentTrackId;
+        const velocity = 80;
+        
+        // Play a note with the current ADSR settings
+        this.app.audioEngine.playNote(60, 0.5, trackId, velocity);
+        console.log(`ADSR Preview: A=${this.adsrParams.attack} D=${this.adsrParams.decay} S=${this.adsrParams.sustain} R=${this.adsrParams.release}`);
+    }
+
+    /**
+     * Reset ADSR to default values
+     */
+    resetAdsr() {
+        this.adsrParams = {
+            attack: 0.01,
+            decay: 0.1,
+            sustain: 0.7,
+            release: 0.1
+        };
+        
+        // Update sliders
+        if (this.adsrAttackSlider) {
+            this.adsrAttackSlider.value = this.adsrParams.attack;
+            this.adsrAttackVal.textContent = this.adsrParams.attack.toFixed(3);
+        }
+        if (this.adsrDecaySlider) {
+            this.adsrDecaySlider.value = this.adsrParams.decay;
+            this.adsrDecayVal.textContent = this.adsrParams.decay.toFixed(2);
+        }
+        if (this.adsrSustainSlider) {
+            this.adsrSustainSlider.value = this.adsrParams.sustain;
+            this.adsrSustainVal.textContent = this.adsrParams.sustain.toFixed(2);
+        }
+        if (this.adsrReleaseSlider) {
+            this.adsrReleaseSlider.value = this.adsrParams.release;
+            this.adsrReleaseVal.textContent = this.adsrParams.release.toFixed(2);
+        }
+        
+        this.updateVoiceAdsr();
+        console.log('ADSR reset to defaults');
+    }
+
+    /**
+     * Update voice ADSR parameters
+     */
+    async updateVoiceAdsr() {
+        if (!this.app.audioEngine) return;
+        
+        try {
+            const audioEngine = await this.app.getAudioEngine();
+            if (audioEngine.voiceManager) {
+                audioEngine.voiceManager.setAdsrParams(this.adsrParams);
+            }
+        } catch (e) {
+            console.warn('Failed to update voice ADSR params:', e);
+        }
+    }
+
+    /**
+     * Initialize Filter modal UI and event listeners
+     */
+    initFilterModal() {
+        // Modal elements
+        this.filterModal = document.getElementById('filter-modal');
+        this.btnFilter = document.getElementById('btn-filter');
+        this.btnCloseFilter = document.getElementById('btn-close-filter');
+        this.btnFilterPreview = document.getElementById('btn-filter-preview');
+        this.btnFilterReset = document.getElementById('btn-filter-reset');
+        
+        // Filter controls
+        this.filterTypeSelect = document.getElementById('filter-type');
+        this.filterCutoffSlider = document.getElementById('filter-cutoff');
+        this.filterResonanceSlider = document.getElementById('filter-resonance');
+        
+        // Value displays
+        this.filterCutoffVal = document.getElementById('filter-cutoff-val');
+        this.filterResonanceVal = document.getElementById('filter-resonance-val');
+        
+        // Open button
+        if (this.btnFilter) {
+            this.btnFilter.addEventListener('click', () => this.openFilterModal());
+        }
+        
+        // Close button
+        if (this.btnCloseFilter) {
+            this.btnCloseFilter.addEventListener('click', () => this.closeFilterModal());
+        }
+        
+        // Close on background click
+        if (this.filterModal) {
+            this.filterModal.addEventListener('click', (e) => {
+                if (e.target === this.filterModal) {
+                    this.closeFilterModal();
+                }
+            });
+        }
+        
+        // Preview button
+        if (this.btnFilterPreview) {
+            this.btnFilterPreview.addEventListener('click', () => this.previewFilter());
+        }
+        
+        // Reset button
+        if (this.btnFilterReset) {
+            this.btnFilterReset.addEventListener('click', () => this.resetFilter());
+        }
+        
+        // Filter type change
+        if (this.filterTypeSelect) {
+            this.filterTypeSelect.addEventListener('change', (e) => {
+                this.filterParams.type = e.target.value;
+                this.updateVoiceFilter();
+            });
+        }
+        
+        // Cutoff slider
+        if (this.filterCutoffSlider) {
+            this.filterCutoffSlider.addEventListener('input', (e) => {
+                this.filterParams.cutoff = parseFloat(e.target.value);
+                this.filterCutoffVal.textContent = this.filterParams.cutoff;
+                this.updateVoiceFilter();
+            });
+        }
+        
+        // Resonance slider
+        if (this.filterResonanceSlider) {
+            this.filterResonanceSlider.addEventListener('input', (e) => {
+                this.filterParams.resonance = parseFloat(e.target.value);
+                this.filterResonanceVal.textContent = this.filterParams.resonance.toFixed(1);
+                this.updateVoiceFilter();
+            });
+        }
+        
+        console.log('UIManager: Filter modal initialized');
+    }
+
+    /**
+     * Open the Filter modal
+     */
+    openFilterModal() {
+        if (!this.filterModal) return;
+        
+        // Update slider values to match current params
+        if (this.filterTypeSelect) {
+            this.filterTypeSelect.value = this.filterParams.type;
+        }
+        if (this.filterCutoffSlider) {
+            this.filterCutoffSlider.value = this.filterParams.cutoff;
+            this.filterCutoffVal.textContent = this.filterParams.cutoff;
+        }
+        if (this.filterResonanceSlider) {
+            this.filterResonanceSlider.value = this.filterParams.resonance;
+            this.filterResonanceVal.textContent = this.filterParams.resonance.toFixed(1);
+        }
+        
+        this.filterModal.style.display = 'flex';
+        console.log('Filter modal opened');
+    }
+
+    /**
+     * Close the Filter modal
+     */
+    closeFilterModal() {
+        if (!this.filterModal) return;
+        this.filterModal.style.display = 'none';
+        console.log('Filter modal closed');
+    }
+
+    /**
+     * Preview the current Filter settings
+     */
+    previewFilter() {
+        if (!this.app.audioEngine) return;
+        
+        const trackId = this.app.currentTrackId;
+        const velocity = 80;
+        
+        // Play a note with the current filter settings
+        this.app.audioEngine.playNote(60, 0.5, trackId, velocity);
+        console.log(`Filter Preview: Type=${this.filterParams.type} Cutoff=${this.filterParams.cutoff}Hz Res=${this.filterParams.resonance}`);
+    }
+
+    /**
+     * Reset Filter to default values
+     */
+    resetFilter() {
+        this.filterParams = {
+            type: 'lowpass',
+            cutoff: 20000,
+            resonance: 1
+        };
+        
+        // Update controls
+        if (this.filterTypeSelect) {
+            this.filterTypeSelect.value = this.filterParams.type;
+        }
+        if (this.filterCutoffSlider) {
+            this.filterCutoffSlider.value = this.filterParams.cutoff;
+            this.filterCutoffVal.textContent = this.filterParams.cutoff;
+        }
+        if (this.filterResonanceSlider) {
+            this.filterResonanceSlider.value = this.filterParams.resonance;
+            this.filterResonanceVal.textContent = this.filterParams.resonance.toFixed(1);
+        }
+        
+        this.updateVoiceFilter();
+        console.log('Filter reset to defaults');
+    }
+
+    /**
+     * Update voice Filter parameters
+     */
+    async updateVoiceFilter() {
+        if (!this.app.audioEngine) return;
+        
+        try {
+            const audioEngine = await this.app.getAudioEngine();
+            if (audioEngine.voiceManager) {
+                audioEngine.voiceManager.setFilterParams(this.filterParams);
+            }
+        } catch (e) {
+            console.warn('Failed to update voice filter params:', e);
         }
     }
 
@@ -116,33 +587,55 @@ export class UIManager {
     /**
      * Load presets from the audio engine
      */
-    loadPresets() {
-        if (!this.app.audioEngine || !this.app.audioEngine.soundFontManager) {
+    async loadPresets() {
+        console.log('loadPresets() called');
+        
+        // Ensure AudioEngine is available
+        let audioEngine = this.app.audioEngine;
+        if (!audioEngine) {
+            console.warn('loadPresets: AudioEngine not available, initializing...');
+            if (typeof this.app.getAudioEngine === 'function') {
+                audioEngine = await this.app.getAudioEngine();
+            } else {
+                console.error('loadPresets: getAudioEngine method not found on app');
+                this.allPresets = [];
+                this.updatePresetList();
+                this.updatePresetInfo();
+                return;
+            }
+        }
+
+        // Ensure SoundFontManager is initialized
+        if (!audioEngine.soundFontManager) {
+            console.warn('loadPresets: SoundFontManager not initialized - SF2 may not be loaded');
             this.allPresets = [];
             this.updatePresetList();
             this.updatePresetInfo();
             return;
         }
 
-        const soundFontManager = this.app.audioEngine.soundFontManager;
+        // Get all presets from SoundFontManager
+        this.allPresets = audioEngine.soundFontManager.getAllPresets() || [];
+        console.log(`loadPresets: Found ${this.allPresets.length} presets`);
         
-        // Get all presets
-        this.allPresets = soundFontManager.getAllPresets() || [];
-        
-        // Get font info
-        const fontIds = soundFontManager.getLoadedFontIds();
-        if (fontIds.length > 0) {
-            const fontInfo = soundFontManager.getFontInfo(fontIds[0]);
-            if (fontInfo) {
-                this.presetFontNameEl.textContent = `Font: ${fontInfo.name}`;
+        // Update font info
+        if (this.presetFontNameEl) {
+            const fontIds = audioEngine.soundFontManager.getLoadedFontIds();
+            if (fontIds.length > 0) {
+                const fontInfo = audioEngine.soundFontManager.getFontInfo(fontIds[0]);
+                if (fontInfo) {
+                    this.presetFontNameEl.textContent = `Font: ${fontInfo.name}`;
+                }
+            } else {
+                this.presetFontNameEl.textContent = 'Font: None';
             }
-        } else {
-            this.presetFontNameEl.textContent = 'Font: None';
         }
 
-        // Get memory stats
-        const memStats = soundFontManager.getMemoryStats();
-        this.presetMemoryEl.textContent = `Memory: ${memStats.currentUsage}`;
+        // Update memory info
+        if (this.presetMemoryEl) {
+            const memStats = audioEngine.soundFontManager.getMemoryStats();
+            this.presetMemoryEl.textContent = `Memory: ${memStats.currentUsage}`;
+        }
 
         // Apply filters and update display
         this.filterPresets();
@@ -165,18 +658,13 @@ export class UIManager {
             );
         }
 
-        // Apply category filter
-        if (this.presetCategoryFilter && this.presetCategoryFilter !== 'all') {
-            presets = presets.filter(p => p.category === this.presetCategoryFilter);
-        }
-
         this.filteredPresets = presets;
         this.updatePresetList();
         this.updatePresetInfo();
     }
 
     /**
-     * Update the preset list display
+     * Update the preset list display (grid view with pagination)
      */
     updatePresetList() {
         if (!this.presetListContainer) return;
@@ -189,21 +677,38 @@ export class UIManager {
             emptyItem.className = 'preset-item';
             emptyItem.innerHTML = `<span class="preset-name">No presets found</span>`;
             this.presetListContainer.appendChild(emptyItem);
+            this.updatePaginationControls();
             return;
         }
 
-        // Create preset items
-        this.filteredPresets.forEach((preset, index) => {
+        // Calculate pagination
+        const totalPages = Math.ceil(this.filteredPresets.length / this.presetPageSize);
+        
+        // Ensure current page is valid
+        if (this.presetCurrentPage > totalPages) {
+            this.presetCurrentPage = totalPages > 0 ? totalPages : 1;
+        }
+        if (this.presetCurrentPage < 1) {
+            this.presetCurrentPage = 1;
+        }
+
+        // Get presets for current page
+        const startIndex = (this.presetCurrentPage - 1) * this.presetPageSize;
+        const endIndex = Math.min(startIndex + this.presetPageSize, this.filteredPresets.length);
+        const pagePresets = this.filteredPresets.slice(startIndex, endIndex);
+
+        // Create preset items (grid layout)
+        pagePresets.forEach((preset, index) => {
             const item = document.createElement('div');
             item.className = 'preset-item';
-            item.dataset.index = preset.index;
+            item.dataset.globalIndex = preset.globalIndex;
+            item.dataset.localIndex = preset.localIndex;
             item.dataset.fontId = preset.fontId;
+            item.dataset.pagePresetIndex = index;
             
             item.innerHTML = `
-                <div>
-                    <span class="preset-name">${preset.fullName}</span>
-                </div>
-                <span class="preset-category preset-category-${preset.category}">${preset.category}</span>
+                <span class="preset-bank">${preset.bank}:${preset.preset}</span>
+                <span class="preset-name">${preset.name.trim()}</span>
             `;
 
             // Add click handler
@@ -217,6 +722,44 @@ export class UIManager {
 
             this.presetListContainer.appendChild(item);
         });
+
+        // Update pagination controls
+        this.updatePaginationControls();
+    }
+
+    /**
+     * Update pagination button states and page info
+     */
+    updatePaginationControls() {
+        const totalPages = Math.ceil(this.filteredPresets.length / this.presetPageSize);
+        
+        // Update page info
+        if (this.presetPageInfoEl) {
+            if (this.filteredPresets.length === 0) {
+                this.presetPageInfoEl.textContent = 'Page 0/0';
+            } else {
+                this.presetPageInfoEl.textContent = `Page ${this.presetCurrentPage}/${totalPages}`;
+            }
+        }
+
+        // Update button states
+        if (this.btnPresetPrev) {
+            this.btnPresetPrev.disabled = this.presetCurrentPage <= 1 || this.filteredPresets.length === 0;
+        }
+        if (this.btnPresetNext) {
+            this.btnPresetNext.disabled = this.presetCurrentPage >= totalPages || this.filteredPresets.length === 0;
+        }
+    }
+
+    /**
+     * Go to specific page
+     */
+    goToPresetPage(page) {
+        const totalPages = Math.ceil(this.filteredPresets.length / this.presetPageSize);
+        if (page >= 1 && page <= totalPages) {
+            this.presetCurrentPage = page;
+            this.updatePresetList();
+        }
     }
 
     /**
@@ -232,20 +775,20 @@ export class UIManager {
      * Select a preset and apply it to the current track
      */
     selectPreset(preset) {
-        console.log(`Selected preset: ${preset.fullName} (index: ${preset.index}, font: ${preset.fontId})`);
+        console.log(`Selected preset: ${preset.fullName} (globalIndex: ${preset.globalIndex}, localIndex: ${preset.localIndex}, font: ${preset.fontId})`);
 
         if (!this.app.audioEngine) {
             console.warn('Audio engine not available');
             return;
         }
 
-        // Update the current track's instrument
+        // Update the current track's instrument - use localIndex for the preset
         const trackId = this.app.currentTrackId;
         this.app.audioEngine.setTrackInstrument(
             trackId,
             preset.bank,
             preset.preset,
-            preset.index,
+            preset.localIndex,  // Use localIndex instead of global index
             preset.fontId
         );
 
@@ -260,7 +803,7 @@ export class UIManager {
         const items = this.presetListContainer.querySelectorAll('.preset-item');
         items.forEach(item => {
             item.classList.remove('selected');
-            if (parseInt(item.dataset.index) === preset.index) {
+            if (parseInt(item.dataset.globalIndex) === preset.globalIndex) {
                 item.classList.add('selected');
             }
         });
