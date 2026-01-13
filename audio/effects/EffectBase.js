@@ -47,8 +47,23 @@ export class EffectBase {
         // Connect input to dry path
         this.inputGain.connect(this.dryGain);
         
+        // Connect wet path (if effectNode exists)
+        if (this.effectNode) {
+            this.inputGain.connect(this.wetGain);
+            this.wetGain.connect(this.effectNode);
+            this.effectNode.connect(this.mixNode);
+        }
+        
         // Connect dry path to mix
         this.dryGain.connect(this.mixNode);
+        
+        // Always connect wetGain to mixNode for wet path
+        // If effectNode exists, wetGain -> effectNode -> mixNode (already connected above)
+        // If effectNode doesn't exist, wetGain -> mixNode directly
+        if (this.wetGain && this.mixNode && !this.wetGain._connectedToMix) {
+            this.wetGain.connect(this.mixNode);
+            this.wetGain._connectedToMix = true;
+        }
         
         // Connect output
         this.mixNode.connect(this.outputGain);
@@ -370,18 +385,71 @@ export class EffectChain {
      * Rebuild audio routing based on current effect list
      */
     rebuildRouting() {
+        console.log(`[DEBUG] EffectChain.rebuildRouting called with ${this.effects.length} effects`);
+        
         // Disconnect everything
         this.input.disconnect();
         
+        if (this.effects.length === 0) {
+            // No effects - connect input directly to output
+            this.input.connect(this.output);
+            console.log("[DEBUG] EffectChain: No effects, connected input->output directly");
+            return;
+        }
+        
         let lastNode = this.input;
         
-        for (const effect of this.effects) {
+        for (let i = 0; i < this.effects.length; i++) {
+            const effect = this.effects[i];
+            console.log(`[DEBUG] EffectChain: Processing effect ${i}: ${effect.constructor.name}`);
+            
+            // Disconnect the effect completely (including internal routing)
             effect.disconnect();
-            effect.connectInput(lastNode);
+            
+            // Reset connection tracking flag
+            effect.wetGain._connectedToMix = false;
+            
+            // Re-establish internal effect routing
+            // inputGain -> dryGain
+            effect.inputGain.connect(effect.dryGain);
+            
+            // inputGain -> wetGain (if effectNode exists)
+            if (effect.effectNode) {
+                effect.inputGain.connect(effect.wetGain);
+                effect.wetGain.connect(effect.effectNode);
+                effect.effectNode.connect(effect.mixNode);
+                console.log(`[DEBUG]   Internal wet path connected: inputGain -> wetGain -> effectNode -> mixNode`);
+            }
+            
+            // dryGain -> mixNode
+            effect.dryGain.connect(effect.mixNode);
+            
+            // Always connect wetGain to mixNode
+            if (effect.wetGain && effect.mixNode && !effect.wetGain._connectedToMix) {
+                effect.wetGain.connect(effect.mixNode);
+                effect.wetGain._connectedToMix = true;
+                console.log(`[DEBUG]   wetGain -> mixNode connected`);
+            }
+            
+            // mixNode -> outputGain
+            effect.mixNode.connect(effect.outputGain);
+            
+            // Connect chain-level: lastNode -> effect.inputGain
+            if (effect.inputGain && lastNode) {
+                lastNode.connect(effect.inputGain);
+                console.log(`[DEBUG]   Connected ${lastNode.constructor.name} -> ${effect.constructor.name}.inputGain`);
+            }
+            
             lastNode = effect.getOutput();
         }
         
-        lastNode.connect(this.output);
+        // Connect last effect's output to chain output
+        if (lastNode) {
+            lastNode.connect(this.output);
+            console.log(`[DEBUG]   Connected ${lastNode.constructor.name} -> chain.output`);
+        }
+        
+        console.log(`[DEBUG] EffectChain.rebuildRouting complete`);
     }
 
     /**

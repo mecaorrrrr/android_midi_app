@@ -12,15 +12,7 @@ export class Filter extends EffectBase {
         
         // Create biquad filter
         this.filter = ctx.createBiquadFilter();
-        
-        // Connect filter to wet path
-        this.inputGain.connect(this.filter);
-        this.filter.connect(this.wetGain);
-        
-        // Additional gain for dynamics
-        this.outputGainNode = ctx.createGain();
-        this.filter.connect(this.outputGainNode);
-        this.outputGainNode.connect(this.wetGain);
+        this.effectNode = this.filter; // Assign to effectNode for EffectBase routing
         
         // LFO for filter modulation
         this.lfo = ctx.createOscillator();
@@ -43,6 +35,9 @@ export class Filter extends EffectBase {
         
         // Register parameters
         this.registerParameters();
+        
+        // Set wet level to full wet (1.0) for filter effects
+        this.setWetLevel(1.0);
         
         // Set default values
         this.setDefaults();
@@ -90,6 +85,27 @@ export class Filter extends EffectBase {
         this.filter.frequency.value = 1000;
         this.filter.Q.value = 1;
         this.filter.gain.value = 0;
+        
+        console.log("[DEBUG] Filter.setDefaults: type=lowpass, frequency=1000, Q=1");
+    }
+
+    /**
+     * Update wet/dry mix levels
+     */
+    updateMix() {
+        const now = this.ctx.currentTime;
+        
+        console.log("[DEBUG] Filter.updateMix: bypassed=", this.bypassed, "wetLevel=", this.wetLevel, "dryLevel=", this.dryLevel);
+        
+        if (this.bypassed) {
+            // Full dry signal when bypassed
+            this.dryGain.gain.setValueAtTime(1, now);
+            this.wetGain.gain.setValueAtTime(0, now);
+        } else if (this.effectNode) {
+            // Apply wet/dry mix
+            this.dryGain.gain.setValueAtTime(this.dryLevel, now);
+            this.wetGain.gain.setValueAtTime(this.wetLevel, now);
+        }
     }
 
     /**
@@ -149,6 +165,27 @@ export class Filter extends EffectBase {
             min: -5000, max: 5000, step: 10, default: 0,
             label: 'Env Mod', unit: 'Hz'
         });
+        
+        // Filter Envelope ADSR parameters
+        this.registerParameter('filterAttack', 0.01, {
+            min: 0.001, max: 10, step: 0.001, default: 0.01,
+            label: 'Filter Attack', unit: 's'
+        });
+        
+        this.registerParameter('filterDecay', 0.3, {
+            min: 0.001, max: 10, step: 0.001, default: 0.3,
+            label: 'Filter Decay', unit: 's'
+        });
+        
+        this.registerParameter('filterSustain', 0.5, {
+            min: 0, max: 1, step: 0.01, default: 0.5,
+            label: 'Filter Sustain'
+        });
+        
+        this.registerParameter('filterRelease', 0.5, {
+            min: 0.001, max: 10, step: 0.001, default: 0.5,
+            label: 'Filter Release', unit: 's'
+        });
     }
 
     /**
@@ -199,6 +236,22 @@ export class Filter extends EffectBase {
             case 'envModAmount':
                 // Store for envelope modulation
                 this.envModAmount = value;
+                break;
+                
+            case 'filterAttack':
+                this.filterAttack = Math.max(0.001, Math.min(10, value));
+                break;
+                
+            case 'filterDecay':
+                this.filterDecay = Math.max(0.001, Math.min(10, value));
+                break;
+                
+            case 'filterSustain':
+                this.filterSustain = Math.max(0, Math.min(1, value));
+                break;
+                
+            case 'filterRelease':
+                this.filterRelease = Math.max(0.001, Math.min(10, value));
                 break;
         }
     }
@@ -273,6 +326,15 @@ export class Filter extends EffectBase {
      */
     setEnvelopeModulation(amount) {
         this.setParameter('envModAmount', amount);
+    }
+
+    /**
+     * Connect input source to this effect (override to maintain wetGain connection)
+     */
+    connectInput(source) {
+        // Use base class method - it connects source to inputGain
+        // EffectBase.setupRouting() handles all internal routing
+        source.connect(this.inputGain);
     }
 
     /**
@@ -386,9 +448,15 @@ export class Filter extends EffectBase {
             frequency: this.filter.frequency.value,
             resonance: this.filter.Q.value,
             gain: this.filter.gain.value,
+            wetLevel: this.wetLevel,
             lfoRate: this.lfo.frequency.value,
             lfoDepth: this.lfoGain.gain.value,
-            lfoType: this.lfo.type
+            lfoType: this.lfo.type,
+            envModAmount: this.envModAmount || 0,
+            filterAttack: this.filterAttack || 0.01,
+            filterDecay: this.filterDecay || 0.3,
+            filterSustain: this.filterSustain || 0.5,
+            filterRelease: this.filterRelease || 0.5
         };
     }
 
@@ -410,7 +478,6 @@ export class Filter extends EffectBase {
         
         // Disconnect filter
         this.filter.disconnect();
-        this.outputGainNode.disconnect();
         
         // Disconnect envelope follower
         if (this.envelopeFollower) {
@@ -445,9 +512,11 @@ export class MultiFilter extends EffectBase {
             this.filters.push(filter);
         }
         
-        // Connect to wet gain
+        // Use the last filter as the effectNode
+        this.effectNode = this.filters[this.filters.length - 1];
+        
+        // Connect last filter to wet gain
         lastNode.connect(this.wetGain);
-        this.wetGain.connect(this.mixNode);
         
         // Register parameters
         this.registerMultiParameters();

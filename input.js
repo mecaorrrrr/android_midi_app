@@ -678,9 +678,13 @@ export class InputManager {
                 if (this.app.audio && this.app.audio.playNote) {
                     this.app.audio.playNote(pitch, 0.25, trackId, velocity);
                 }
-                // Use AudioEngine for SF2 playback
-                if (this.app.audioEngine && typeof this.app.audioEngine.playNote === 'function') {
-                    this.app.audioEngine.playNote(pitch, 0.25, trackId, velocity);
+                // Use AudioEngine for SF2 playback - use getAudioEngine() to ensure initialization
+                if (this.app.getAudioEngine) {
+                    this.app.getAudioEngine().then(audioEngine => {
+                        if (audioEngine && typeof audioEngine.playNote === 'function') {
+                            audioEngine.playNote(pitch, 0.25, trackId, velocity);
+                        }
+                    });
                 }
             }
         } catch (e) {

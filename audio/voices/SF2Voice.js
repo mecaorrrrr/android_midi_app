@@ -4,13 +4,14 @@
  */
 
 export class SF2Voice {
-    constructor(ctx, output, soundFontManager = null, adsrParams = null) {
+    constructor(ctx, output, soundFontManager = null, adsrParams = null, filterParams = null) {
         this.ctx = ctx;
         this.output = output;
         this.soundFontManager = soundFontManager;
         
         // Use provided ADSR params or use class defaults
         this.customAdsrParams = adsrParams;
+        this.customFilterParams = filterParams;
         
         this.voiceId = null;
         this.trackId = 0;
@@ -41,6 +42,8 @@ export class SF2Voice {
         this.filterType = 'lowpass';
         this.filterFreq = 20000;
         this.filterQ = 1;
+        
+        console.log(`[DEBUG] SF2Voice.constructor: filterParams=`, filterParams);
     }
 
     /**
@@ -126,12 +129,21 @@ export class SF2Voice {
             }
             this.gainNode.connect(this.output);
             
+            // Debug: Verify output connection
+            console.log(`[DEBUG] SF2Voice: audio graph connected`);
+            console.log(`[DEBUG] SF2Voice: source=${this.source ? 'connected' : 'null'}, filter=${this.filter ? 'connected' : 'null'}, gainNode=${this.gainNode ? 'connected' : 'null'}`);
+            console.log(`[DEBUG] SF2Voice: output node type=${this.output?.constructor?.name || 'null'}, output destination nodes=${this.output?. destinations?.length || 0}`);
+            
             // Set initial gain
             const initialGain = (velocity / 127) * this.sustainLevel;
             this.gainNode.gain.setValueAtTime(0, this.ctx.currentTime);
             
             // Start envelope
             this.startEnvelope(initialGain, duration);
+            
+            // Debug: Check envelope scheduling
+            console.log(`[DEBUG] SF2Voice: initialGain=${initialGain.toFixed(4)}, sustainLevel=${this.sustainLevel.toFixed(4)}`);
+            console.log(`[DEBUG] SF2Voice: attack=${this.attackTime.toFixed(4)}s, decay=${this.decayTime.toFixed(4)}s, release=${this.releaseTimeValue.toFixed(4)}s`);
             
             // Start source
             this.source.start(0);
@@ -206,10 +218,13 @@ export class SF2Voice {
      * Configure filter from SF2 generators
      */
     configureFilter(zone, presetZone) {
+        console.log(`[DEBUG] SF2Voice.configureFilter: customFilterParams=`, this.customFilterParams);
+        
         // Generator 8: initialFilterFreq (Hz, 0 to 20000)
         const freqGen = this.getGeneratorValue(zone, presetZone, 8);
         
         if (freqGen !== null && freqGen < 20000) {
+            // Use SF2 filter settings
             this.filterEnabled = true;
             this.filterFreq = Math.min(20000, Math.max(0, freqGen));
             
@@ -220,11 +235,26 @@ export class SF2Voice {
             // Filter type (usually lowpass for standard SF2)
             this.filterType = 'lowpass';
             
+            console.log(`[DEBUG] SF2Voice: Using SF2 filter - freq=${this.filterFreq}, Q=${this.filterQ}`);
+        } else if (this.customFilterParams) {
+            // Use global filter params from VoiceManager
+            this.filterEnabled = true;
+            this.filterType = this.customFilterParams.type || 'lowpass';
+            this.filterFreq = this.customFilterParams.frequency || 20000;
+            this.filterQ = this.customFilterParams.resonance || 1;
+            
+            console.log(`[DEBUG] SF2Voice: Using global filter - type=${this.filterType}, freq=${this.filterFreq}, Q=${this.filterQ}`);
+        } else {
+            // No filter
+            this.filterEnabled = false;
+            console.log(`[DEBUG] SF2Voice: No filter enabled (no SF2 filter and no global filter)`);
+        }
+        
+        // Apply filter settings to filter node
+        if (this.filter) {
             this.filter.type = this.filterType;
             this.filter.frequency.value = this.filterFreq;
             this.filter.Q.value = this.filterQ;
-        } else {
-            this.filterEnabled = false;
         }
     }
 

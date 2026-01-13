@@ -926,4 +926,24 @@ class App {
 
 window.addEventListener('DOMContentLoaded', () => {
     window.app = new App();
+    
+    // Debug helper: expose audioEngine globally
+    window.getAudioEngine = async () => {
+        if (window.app && window.app.audioEngine) {
+            return window.app.audioEngine;
+        }
+        return await window.app.getAudioEngine();
+    };
+    
+    // Debug helper: diagnose audio path
+    window.diagnoseAudio = async () => {
+        const engine = await window.getAudioEngine();
+        if (engine && typeof engine.diagnoseAudioPath === 'function') {
+            engine.diagnoseAudioPath();
+        } else {
+            console.error('AudioEngine not initialized or diagnoseAudioPath not available');
+        }
+    };
+    
+    console.log('Debug helpers available: getAudioEngine(), diagnoseAudio()');
 });

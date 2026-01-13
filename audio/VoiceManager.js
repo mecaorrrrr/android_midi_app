@@ -5,9 +5,10 @@
  */
 
 export class VoiceManager {
-    constructor(ctx, maxVoices = 64) {
+    constructor(ctx, maxVoices = 64, audioEngine = null) {
         this.ctx = ctx;
         this.maxVoices = maxVoices;
+        this.audioEngine = audioEngine; // Reference to AudioEngine for filter propagation
         this.activeVoices = new Map(); // voiceId -> voice object
         this.voicePool = {
             sf2: [],
@@ -111,8 +112,26 @@ export class VoiceManager {
      * Set Filter parameters
      */
     setFilterParams(params) {
-        this.filterParams = { ...this.filterParams, ...params };
-        console.log(`VoiceManager: Filter params updated - Type:${this.filterParams.type} Cutoff:${this.filterParams.cutoff}Hz Res:${this.filterParams.resonance}`);
+        // Map UI parameter names to internal names
+        const mappedParams = { ...params };
+        
+        // UI sends 'frequency' but we use 'frequency' internally
+        // Also support 'cutoff' as alias for frequency
+        if (params.frequency !== undefined) {
+            mappedParams.frequency = params.frequency;
+        }
+        if (params.cutoff !== undefined) {
+            mappedParams.frequency = params.cutoff;
+        }
+        
+        this.filterParams = { ...this.filterParams, ...mappedParams };
+        console.log(`VoiceManager: Filter params updated - Type:${this.filterParams.type} Freq:${this.filterParams.frequency}Hz Res:${this.filterParams.resonance}`);
+        
+        // Propagate to AudioEngine's global filter
+        if (this.audioEngine && this.audioEngine.setFilter) {
+            this.audioEngine.setFilter(this.filterParams);
+            console.log('VoiceManager: Filter params propagated to AudioEngine');
+        }
     }
 
     /**
@@ -161,13 +180,58 @@ export class VoiceManager {
      */
     setEffectsOutput(effectsInput) {
         this.effectsOutput = effectsInput;
+        console.log("[DEBUG] VoiceManager.setEffectsOutput called:", {
+            effectsInput: effectsInput ? 'provided' : 'null',
+            effectsInputType: effectsInput?.constructor?.name,
+            previousEffectsOutput: this.effectsOutput ? 'was set' : 'was null',
+            masterOutput: this.masterOutput ? 'exists' : 'null',
+            trackChannelsCount: this.trackChannels?.length || 0
+        });
+        
         // Re-route all track channels
         for (const channel of this.trackChannels) {
-            channel.panner.disconnect();
+            if (!channel.panner) {
+                console.warn("[DEBUG] VoiceManager: channel.panner is null for track");
+                continue;
+            }
+            
+            // Disconnect from current connections
+            try {
+                channel.panner.disconnect();
+            } catch (e) {
+                console.warn("[DEBUG] VoiceManager: panner.disconnect() failed:", e);
+            }
+            
+            // Determine where to connect
+            let target = null;
             if (this.effectsOutput) {
-                channel.panner.connect(this.effectsOutput);
+                target = this.effectsOutput;
+                console.log("[DEBUG] Connecting channel.panner to effectsOutput");
             } else if (this.masterOutput) {
-                channel.panner.connect(this.masterOutput);
+                target = this.masterOutput;
+                console.log("[DEBUG] Connecting channel.panner to masterOutput (effectsOutput is null)");
+            } else {
+                console.warn("[DEBUG] VoiceManager: No valid output target for panner!");
+            }
+            
+            if (target) {
+                try {
+                    channel.panner.connect(target);
+                    console.log("[DEBUG] VoiceManager: panner connected successfully");
+                } catch (e) {
+                    console.error("[DEBUG] VoiceManager: panner.connect() failed:", e);
+                }
+            }
+        }
+        
+        // Verify connections after routing
+        console.log("[DEBUG] VoiceManager: Post-routing connection verification:");
+        for (let i = 0; i < this.trackChannels.length; i++) {
+            const ch = this.trackChannels[i];
+            if (ch?.panner) {
+                // Check if panner has any active connections
+                const connections = ch.panner._connections || ch.panner._activeInputs || [];
+                console.log(`[DEBUG] Track ${i} panner connections: ${connections.length}`);
             }
         }
     }
@@ -280,9 +344,14 @@ export class VoiceManager {
         const trackChannel = this.trackChannels[trackId] || this.trackChannels[0];
         const output = this.effectsOutput || trackChannel.gain;
         
+        console.log(`[DEBUG] VoiceManager.createVoice: type=${type}, trackId=${trackId}`);
+        console.log(`[DEBUG] VoiceManager.createVoice: effectsOutput=${this.effectsOutput ? 'set' : 'null'}, trackChannel.gain=${trackChannel.gain ? 'exists' : 'null'}`);
+        console.log(`[DEBUG] VoiceManager.createVoice: output node type=${output?.constructor?.name || 'null'}`);
+        
         switch (type) {
             case 'sf2': {
                 const { SF2Voice } = await import('./voices/SF2Voice.js');
+                console.log(`[DEBUG] VoiceManager.createVoice: filterParams=`, this.filterParams);
                 return new SF2Voice(this.ctx, output, this.soundFontManager, this.adsrParams, this.filterParams);
             }
             case 'sfz': {
@@ -325,5 +394,80 @@ export class VoiceManager {
             max: this.maxVoices,
             available: this.maxVoices - this.activeVoices.size
         };
+    }
+
+    /**
+     * Dispose of all resources and stop all voices
+     */
+    dispose() {
+        console.log("[DEBUG] VoiceManager.dispose() called");
+        
+        // Stop all active voices
+        if (this.activeVoices && this.activeVoices.size > 0) {
+            for (const [voiceId, voice] of this.activeVoices) {
+                try {
+                    voice.stop();
+                    voice.disconnect();
+                } catch (e) {
+                    console.warn("[DEBUG] Error disposing voice:", e);
+                }
+            }
+            this.activeVoices.clear();
+        }
+        
+        // Dispose all voices in the pools
+        if (this.voicePool) {
+            for (const type in this.voicePool) {
+                const pool = this.voicePool[type];
+                if (pool && pool.length > 0) {
+                    for (const voice of pool) {
+                        try {
+                            if (voice.dispose) {
+                                voice.dispose();
+                            }
+                        } catch (e) {
+                            console.warn("[DEBUG] Error disposing pooled voice:", e);
+                        }
+                    }
+                    pool.length = 0;
+                }
+            }
+        }
+        
+        // Clear voice pool
+        this.voicePool = {
+            sf2: [],
+            sfz: [],
+            osc: []
+        };
+        
+        // Dispose track channels
+        if (this.trackChannels && this.trackChannels.length > 0) {
+            for (const channel of this.trackChannels) {
+                try {
+                    if (channel.gain) {
+                        channel.gain.disconnect();
+                    }
+                    if (channel.panner) {
+                        channel.panner.disconnect();
+                    }
+                } catch (e) {
+                    // Ignore
+                }
+            }
+            this.trackChannels = [];
+        }
+        
+        // Dispose effects output if exists
+        if (this.effectsOutput) {
+            try {
+                this.effectsOutput.disconnect();
+            } catch (e) {
+                // Ignore
+            }
+            this.effectsOutput = null;
+        }
+        
+        console.log("[DEBUG] VoiceManager dispose complete");
     }
 }

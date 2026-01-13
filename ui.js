@@ -165,8 +165,16 @@ export class UIManager {
         // Filter state
         this.filterParams = {
             type: 'lowpass',
-            cutoff: 20000,
-            resonance: 1
+            frequency: 20000,
+            resonance: 1,
+            envModAmount: 0,
+            lfoRate: 1,
+            lfoDepth: 0,
+            lfoType: 'sine',
+            filterAttack: 0.01,
+            filterDecay: 0.3,
+            filterSustain: 0.5,
+            filterRelease: 0.5
         };
         
         this.initAdsrModal();
@@ -409,10 +417,29 @@ export class UIManager {
         this.filterTypeSelect = document.getElementById('filter-type');
         this.filterCutoffSlider = document.getElementById('filter-cutoff');
         this.filterResonanceSlider = document.getElementById('filter-resonance');
+        this.filterEnvModSlider = document.getElementById('filter-env-mod');
+        this.filterLfoRateSlider = document.getElementById('filter-lfo-rate');
+        this.filterLfoDepthSlider = document.getElementById('filter-lfo-depth');
+        this.filterLfoTypeSelect = document.getElementById('filter-lfo-type');
+        
+        // Filter Envelope ADSR controls
+        this.filterAttackSlider = document.getElementById('filter-attack');
+        this.filterDecaySlider = document.getElementById('filter-decay');
+        this.filterSustainSlider = document.getElementById('filter-sustain');
+        this.filterReleaseSlider = document.getElementById('filter-release');
         
         // Value displays
         this.filterCutoffVal = document.getElementById('filter-cutoff-val');
         this.filterResonanceVal = document.getElementById('filter-resonance-val');
+        this.filterEnvModVal = document.getElementById('filter-env-mod-val');
+        this.filterLfoRateVal = document.getElementById('filter-lfo-rate-val');
+        this.filterLfoDepthVal = document.getElementById('filter-lfo-depth-val');
+        
+        // Filter Envelope ADSR value displays
+        this.filterAttackVal = document.getElementById('filter-attack-val');
+        this.filterDecayVal = document.getElementById('filter-decay-val');
+        this.filterSustainVal = document.getElementById('filter-sustain-val');
+        this.filterReleaseVal = document.getElementById('filter-release-val');
         
         // Open button
         if (this.btnFilter) {
@@ -454,8 +481,8 @@ export class UIManager {
         // Cutoff slider
         if (this.filterCutoffSlider) {
             this.filterCutoffSlider.addEventListener('input', (e) => {
-                this.filterParams.cutoff = parseFloat(e.target.value);
-                this.filterCutoffVal.textContent = this.filterParams.cutoff;
+                this.filterParams.frequency = parseFloat(e.target.value);
+                this.filterCutoffVal.textContent = this.filterParams.frequency;
                 this.updateVoiceFilter();
             });
         }
@@ -465,6 +492,77 @@ export class UIManager {
             this.filterResonanceSlider.addEventListener('input', (e) => {
                 this.filterParams.resonance = parseFloat(e.target.value);
                 this.filterResonanceVal.textContent = this.filterParams.resonance.toFixed(1);
+                this.updateVoiceFilter();
+            });
+        }
+        
+        // Env Mod slider
+        if (this.filterEnvModSlider) {
+            this.filterEnvModSlider.addEventListener('input', (e) => {
+                this.filterParams.envModAmount = parseFloat(e.target.value);
+                this.filterEnvModVal.textContent = this.filterParams.envModAmount;
+                this.updateVoiceFilter();
+            });
+        }
+        
+        // LFO Rate slider
+        if (this.filterLfoRateSlider) {
+            this.filterLfoRateSlider.addEventListener('input', (e) => {
+                this.filterParams.lfoRate = parseFloat(e.target.value);
+                this.filterLfoRateVal.textContent = this.filterParams.lfoRate;
+                this.updateVoiceFilter();
+            });
+        }
+        
+        // LFO Depth slider
+        if (this.filterLfoDepthSlider) {
+            this.filterLfoDepthSlider.addEventListener('input', (e) => {
+                this.filterParams.lfoDepth = parseFloat(e.target.value);
+                this.filterLfoDepthVal.textContent = this.filterParams.lfoDepth;
+                this.updateVoiceFilter();
+            });
+        }
+        
+        // LFO Type select
+        if (this.filterLfoTypeSelect) {
+            this.filterLfoTypeSelect.addEventListener('change', (e) => {
+                this.filterParams.lfoType = e.target.value;
+                this.updateVoiceFilter();
+            });
+        }
+        
+        // Filter Attack slider
+        if (this.filterAttackSlider) {
+            this.filterAttackSlider.addEventListener('input', (e) => {
+                this.filterParams.filterAttack = parseFloat(e.target.value);
+                this.filterAttackVal.textContent = this.filterParams.filterAttack.toFixed(3);
+                this.updateVoiceFilter();
+            });
+        }
+        
+        // Filter Decay slider
+        if (this.filterDecaySlider) {
+            this.filterDecaySlider.addEventListener('input', (e) => {
+                this.filterParams.filterDecay = parseFloat(e.target.value);
+                this.filterDecayVal.textContent = this.filterParams.filterDecay.toFixed(2);
+                this.updateVoiceFilter();
+            });
+        }
+        
+        // Filter Sustain slider
+        if (this.filterSustainSlider) {
+            this.filterSustainSlider.addEventListener('input', (e) => {
+                this.filterParams.filterSustain = parseFloat(e.target.value);
+                this.filterSustainVal.textContent = this.filterParams.filterSustain.toFixed(2);
+                this.updateVoiceFilter();
+            });
+        }
+        
+        // Filter Release slider
+        if (this.filterReleaseSlider) {
+            this.filterReleaseSlider.addEventListener('input', (e) => {
+                this.filterParams.filterRelease = parseFloat(e.target.value);
+                this.filterReleaseVal.textContent = this.filterParams.filterRelease.toFixed(2);
                 this.updateVoiceFilter();
             });
         }
@@ -483,12 +581,45 @@ export class UIManager {
             this.filterTypeSelect.value = this.filterParams.type;
         }
         if (this.filterCutoffSlider) {
-            this.filterCutoffSlider.value = this.filterParams.cutoff;
-            this.filterCutoffVal.textContent = this.filterParams.cutoff;
+            this.filterCutoffSlider.value = this.filterParams.frequency;
+            this.filterCutoffVal.textContent = this.filterParams.frequency;
         }
         if (this.filterResonanceSlider) {
             this.filterResonanceSlider.value = this.filterParams.resonance;
             this.filterResonanceVal.textContent = this.filterParams.resonance.toFixed(1);
+        }
+        if (this.filterEnvModSlider) {
+            this.filterEnvModSlider.value = this.filterParams.envModAmount;
+            this.filterEnvModVal.textContent = this.filterParams.envModAmount;
+        }
+        if (this.filterLfoRateSlider) {
+            this.filterLfoRateSlider.value = this.filterParams.lfoRate;
+            this.filterLfoRateVal.textContent = this.filterParams.lfoRate;
+        }
+        if (this.filterLfoDepthSlider) {
+            this.filterLfoDepthSlider.value = this.filterParams.lfoDepth;
+            this.filterLfoDepthVal.textContent = this.filterParams.lfoDepth;
+        }
+        if (this.filterLfoTypeSelect) {
+            this.filterLfoTypeSelect.value = this.filterParams.lfoType;
+        }
+        
+        // Filter Envelope ADSR
+        if (this.filterAttackSlider) {
+            this.filterAttackSlider.value = this.filterParams.filterAttack;
+            this.filterAttackVal.textContent = this.filterParams.filterAttack.toFixed(3);
+        }
+        if (this.filterDecaySlider) {
+            this.filterDecaySlider.value = this.filterParams.filterDecay;
+            this.filterDecayVal.textContent = this.filterParams.filterDecay.toFixed(2);
+        }
+        if (this.filterSustainSlider) {
+            this.filterSustainSlider.value = this.filterParams.filterSustain;
+            this.filterSustainVal.textContent = this.filterParams.filterSustain.toFixed(2);
+        }
+        if (this.filterReleaseSlider) {
+            this.filterReleaseSlider.value = this.filterParams.filterRelease;
+            this.filterReleaseVal.textContent = this.filterParams.filterRelease.toFixed(2);
         }
         
         this.filterModal.style.display = 'flex';
@@ -515,7 +646,7 @@ export class UIManager {
         
         // Play a note with the current filter settings
         this.app.audioEngine.playNote(60, 0.5, trackId, velocity);
-        console.log(`Filter Preview: Type=${this.filterParams.type} Cutoff=${this.filterParams.cutoff}Hz Res=${this.filterParams.resonance}`);
+        console.log(`Filter Preview: Type=${this.filterParams.type} Frequency=${this.filterParams.frequency}Hz Res=${this.filterParams.resonance}`);
     }
 
     /**
@@ -524,8 +655,16 @@ export class UIManager {
     resetFilter() {
         this.filterParams = {
             type: 'lowpass',
-            cutoff: 20000,
-            resonance: 1
+            frequency: 20000,
+            resonance: 1,
+            envModAmount: 0,
+            lfoRate: 1,
+            lfoDepth: 0,
+            lfoType: 'sine',
+            filterAttack: 0.01,
+            filterDecay: 0.3,
+            filterSustain: 0.5,
+            filterRelease: 0.5
         };
         
         // Update controls
@@ -533,12 +672,45 @@ export class UIManager {
             this.filterTypeSelect.value = this.filterParams.type;
         }
         if (this.filterCutoffSlider) {
-            this.filterCutoffSlider.value = this.filterParams.cutoff;
-            this.filterCutoffVal.textContent = this.filterParams.cutoff;
+            this.filterCutoffSlider.value = this.filterParams.frequency;
+            this.filterCutoffVal.textContent = this.filterParams.frequency;
         }
         if (this.filterResonanceSlider) {
             this.filterResonanceSlider.value = this.filterParams.resonance;
             this.filterResonanceVal.textContent = this.filterParams.resonance.toFixed(1);
+        }
+        if (this.filterEnvModSlider) {
+            this.filterEnvModSlider.value = this.filterParams.envModAmount;
+            this.filterEnvModVal.textContent = this.filterParams.envModAmount;
+        }
+        if (this.filterLfoRateSlider) {
+            this.filterLfoRateSlider.value = this.filterParams.lfoRate;
+            this.filterLfoRateVal.textContent = this.filterParams.lfoRate;
+        }
+        if (this.filterLfoDepthSlider) {
+            this.filterLfoDepthSlider.value = this.filterParams.lfoDepth;
+            this.filterLfoDepthVal.textContent = this.filterParams.lfoDepth;
+        }
+        if (this.filterLfoTypeSelect) {
+            this.filterLfoTypeSelect.value = this.filterParams.lfoType;
+        }
+        
+        // Update Filter Envelope ADSR controls
+        if (this.filterAttackSlider) {
+            this.filterAttackSlider.value = this.filterParams.filterAttack;
+            this.filterAttackVal.textContent = this.filterParams.filterAttack.toFixed(3);
+        }
+        if (this.filterDecaySlider) {
+            this.filterDecaySlider.value = this.filterParams.filterDecay;
+            this.filterDecayVal.textContent = this.filterParams.filterDecay.toFixed(2);
+        }
+        if (this.filterSustainSlider) {
+            this.filterSustainSlider.value = this.filterParams.filterSustain;
+            this.filterSustainVal.textContent = this.filterParams.filterSustain.toFixed(2);
+        }
+        if (this.filterReleaseSlider) {
+            this.filterReleaseSlider.value = this.filterParams.filterRelease;
+            this.filterReleaseVal.textContent = this.filterParams.filterRelease.toFixed(2);
         }
         
         this.updateVoiceFilter();

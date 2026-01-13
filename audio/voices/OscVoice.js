@@ -4,12 +4,13 @@
  */
 
 export class OscVoice {
-    constructor(ctx, output, adsrParams = null) {
+    constructor(ctx, output, adsrParams = null, filterParams = null) {
         this.ctx = ctx;
         this.output = output;
         
         // Store custom ADSR params for later use
         this.customAdsrParams = adsrParams;
+        this.customFilterParams = filterParams;
         
         this.voiceId = null;
         this.trackId = 0;
@@ -59,6 +60,8 @@ export class OscVoice {
         // LFO for pitch modulation
         this.lfoOscillator = null;
         this.lfoGain = null;
+        
+        console.log(`[DEBUG] OscVoice.constructor: filterParams=`, filterParams);
     }
 
     /**
@@ -145,7 +148,16 @@ export class OscVoice {
         this.sustainLevel = this.customAdsrParams?.sustain ?? (params.sustain !== undefined ? params.sustain / 100 : 0.7);
         this.releaseTimeValue = this.customAdsrParams?.release ?? params.release ?? 0.2;
         
-        // Filter
+        // Filter - use custom filter params as fallback
+        if (this.customFilterParams) {
+            this.filterEnabled = true;
+            this.filterType = this.customFilterParams.type || 'lowpass';
+            this.filterFreq = this.customFilterParams.frequency || 20000;
+            this.filterQ = this.customFilterParams.resonance || 1;
+            console.log(`[DEBUG] OscVoice: Using global filter - type=${this.filterType}, freq=${this.filterFreq}, Q=${this.filterQ}`);
+        }
+        
+        // Override with params if provided
         if (params.filterEnabled !== undefined) {
             this.filterEnabled = params.filterEnabled;
         }
@@ -203,6 +215,7 @@ export class OscVoice {
             this.filter.type = this.filterType;
             this.filter.frequency.value = this.filterFreq;
             this.filter.Q.value = this.filterQ;
+            console.log(`[DEBUG] OscVoice.createAudioNodes: filter created - type=${this.filterType}, freq=${this.filterFreq}, Q=${this.filterQ}`);
         }
     }
 
@@ -211,6 +224,8 @@ export class OscVoice {
      */
     connectNodes() {
         // Main chain: Osc -> Filter (optional) -> Gain -> Pan -> Output
+        console.log(`[DEBUG] OscVoice.connectNodes: output node type=${this.output?.constructor?.name || 'null'}`);
+        
         if (this.filterEnabled) {
             this.oscillator.connect(this.filter);
             this.filter.connect(this.gainNode);
@@ -220,6 +235,8 @@ export class OscVoice {
         
         this.gainNode.connect(this.panNode);
         this.panNode.connect(this.output);
+        
+        console.log(`[DEBUG] OscVoice: audio graph connected successfully`);
     }
 
     /**
