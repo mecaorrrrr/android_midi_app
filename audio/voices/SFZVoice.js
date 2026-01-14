@@ -113,6 +113,10 @@ export class SFZVoice {
             this.isPlaying = true;
             this.isReleased = false;
             
+            // Schedule source stop at duration end to ensure sound stops
+            const stopTime = this.ctx.currentTime + (duration || 1.0);
+            this.source.stop(stopTime);
+            
             // Set up end callback
             this.source.onended = () => {
                 this.isPlaying = false;

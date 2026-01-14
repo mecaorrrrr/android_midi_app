@@ -34,8 +34,7 @@ export class SF2Voice {
         // ADSR parameters
         this.attackTime = 0.001;
         this.decayTime = 0.1;
-        this.sustainAttenuationDb = 0;  // Generator 36 / 10 (デシベル単位の減衰量)
-        this.sustainLevel = 0.7;  // 後方互換性のため維持（使用推奨せず）
+        this.sustainAttenuationDb = 0;  // Generator 37 / 10 (デシベル単位の減衰量)
         this.releaseTimeValue = 0.1;
         
         // Filter parameters
@@ -152,6 +151,10 @@ export class SF2Voice {
             this.isPlaying = true;
             this.isReleased = false;
             
+            // Schedule source stop at duration end to ensure sound stops
+            const stopTime = this.ctx.currentTime + duration;
+            this.source.stop(stopTime);
+            
             // Set up end callback
             this.source.onended = () => {
                 this.isPlaying = false;
@@ -180,27 +183,25 @@ export class SF2Voice {
         }
         
         // Otherwise, calculate from SF2 generators
-        // Generator 33: attackVolEnv (timecents, -12000 to 0)
-        const attackGen = this.getGeneratorValue(zone, presetZone, 33);
+        // Generator 34: attackVolEnv (timecents, -12000 to 0)
+        const attackGen = this.getGeneratorValue(zone, presetZone, 34);
         this.attackTime = attackGen !== null ? this.timecentsToSeconds(attackGen) : 0.001;
         
-        // Generator 34: decayVolEnv (timecents, -12000 to 0)
-        const decayGen = this.getGeneratorValue(zone, presetZone, 34);
+        // Generator 36: decayVolEnv (timecents, -12000 to 0)
+        const decayGen = this.getGeneratorValue(zone, presetZone, 36);
         this.decayTime = Math.min(4, decayGen !== null ? this.timecentsToSeconds(decayGen) : 0.1);
         
-        // Generator 36: sustainVolEnv (centibels, 0 to -1440, positive = quieter)
-        const sustainGen = this.getGeneratorValue(zone, presetZone, 36);
+        // Generator 37: sustainVolEnv (centibels, 0 to -1440, positive = quieter)
+        const sustainGen = this.getGeneratorValue(zone, presetZone, 37);
         if (sustainGen !== null) {
             // センチベルを10で割ってデシベルに変換（減衰量）
             this.sustainAttenuationDb = Math.abs(sustainGen / 10);
         } else {
             this.sustainAttenuationDb = 0;
         }
-        // 後方互換性のため維持（使用しないことを推奨）
-        this.sustainLevel = 0.7;
-        
-        // Generator 35: releaseVolEnv (timecents, -12000 to 0)
-        const releaseGen = this.getGeneratorValue(zone, presetZone, 35);
+
+        // Generator 38: releaseVolEnv (timecents, -12000 to 0)
+        const releaseGen = this.getGeneratorValue(zone, presetZone, 38);
         this.releaseTimeValue = releaseGen !== null ? this.timecentsToSeconds(releaseGen) : 0.1;
     }
 
