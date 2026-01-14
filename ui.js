@@ -162,6 +162,9 @@ export class UIManager {
             release: 0.1
         };
         
+        // Flag to track if ADSR was loaded from SF2 for current preset
+        this.adsrLoadedFromSf2 = false;
+        
         // Filter state
         this.filterParams = {
             type: 'lowpass',
@@ -257,6 +260,7 @@ export class UIManager {
             this.adsrAttackSlider.addEventListener('input', (e) => {
                 this.adsrParams.attack = parseFloat(e.target.value);
                 this.adsrAttackVal.textContent = this.adsrParams.attack.toFixed(3);
+                this.adsrLoadedFromSf2 = false; // User modified, stop auto-loading from SF2
                 this.updateVoiceAdsr();
             });
         }
@@ -265,6 +269,7 @@ export class UIManager {
             this.adsrDecaySlider.addEventListener('input', (e) => {
                 this.adsrParams.decay = parseFloat(e.target.value);
                 this.adsrDecayVal.textContent = this.adsrParams.decay.toFixed(2);
+                this.adsrLoadedFromSf2 = false; // User modified, stop auto-loading from SF2
                 this.updateVoiceAdsr();
             });
         }
@@ -273,6 +278,7 @@ export class UIManager {
             this.adsrSustainSlider.addEventListener('input', (e) => {
                 this.adsrParams.sustain = parseFloat(e.target.value);
                 this.adsrSustainVal.textContent = this.adsrParams.sustain.toFixed(2);
+                this.adsrLoadedFromSf2 = false; // User modified, stop auto-loading from SF2
                 this.updateVoiceAdsr();
             });
         }
@@ -281,6 +287,7 @@ export class UIManager {
             this.adsrReleaseSlider.addEventListener('input', (e) => {
                 this.adsrParams.release = parseFloat(e.target.value);
                 this.adsrReleaseVal.textContent = this.adsrParams.release.toFixed(2);
+                this.adsrLoadedFromSf2 = false; // User modified, stop auto-loading from SF2
                 this.updateVoiceAdsr();
             });
         }
@@ -289,42 +296,35 @@ export class UIManager {
     }
 
     /**
-     * Open the ADSR modal
+     * Load ADSR parameters from SF2 for the current preset
+     * Called when preset changes to reset ADSR to SF2 values
      */
-    async openAdsrModal() {
-        if (!this.adsrModal) return;
-        
-        // Try to load ADSR params from SF2 if available
+    async loadAdsrFromSf2() {
         try {
             const audioEngine = await this.app.getAudioEngine();
             if (audioEngine && audioEngine.mode === 'sf2') {
                 const sf2AdsrParams = audioEngine.getCurrentPresetAdsrParams();
                 if (sf2AdsrParams) {
                     this.adsrParams = sf2AdsrParams;
-                    console.log('openAdsrModal: Loaded ADSR from SF2:', sf2AdsrParams);
+                    this.adsrLoadedFromSf2 = true;
+                    console.log('loadAdsrFromSf2: Loaded ADSR from SF2:', sf2AdsrParams);
+                    return true;
                 }
             }
         } catch (e) {
-            console.warn('openAdsrModal: Failed to load ADSR from SF2:', e);
+            console.warn('loadAdsrFromSf2: Failed to load ADSR from SF2:', e);
         }
+        return false;
+    }
+
+    /**
+     * Open the ADSR modal
+     */
+    async openAdsrModal() {
+        if (!this.adsrModal) return;
         
-        // Update slider values to match current params
-        if (this.adsrAttackSlider) {
-            this.adsrAttackSlider.value = this.adsrParams.attack;
-            this.adsrAttackVal.textContent = this.adsrParams.attack.toFixed(3);
-        }
-        if (this.adsrDecaySlider) {
-            this.adsrDecaySlider.value = this.adsrParams.decay;
-            this.adsrDecayVal.textContent = this.adsrParams.decay.toFixed(2);
-        }
-        if (this.adsrSustainSlider) {
-            this.adsrSustainSlider.value = this.adsrParams.sustain;
-            this.adsrSustainVal.textContent = this.adsrParams.sustain.toFixed(2);
-        }
-        if (this.adsrReleaseSlider) {
-            this.adsrReleaseSlider.value = this.adsrParams.release;
-            this.adsrReleaseVal.textContent = this.adsrParams.release.toFixed(2);
-        }
+        // Update slider values to match current params using the helper method
+        this.updateAdsrUIFromParams();
         
         this.adsrModal.style.display = 'flex';
         console.log('ADSR modal opened');
@@ -364,25 +364,10 @@ export class UIManager {
             release: 0.1
         };
         
-        // Update sliders
-        if (this.adsrAttackSlider) {
-            this.adsrAttackSlider.value = this.adsrParams.attack;
-            this.adsrAttackVal.textContent = this.adsrParams.attack.toFixed(3);
-        }
-        if (this.adsrDecaySlider) {
-            this.adsrDecaySlider.value = this.adsrParams.decay;
-            this.adsrDecayVal.textContent = this.adsrParams.decay.toFixed(2);
-        }
-        if (this.adsrSustainSlider) {
-            this.adsrSustainSlider.value = this.adsrParams.sustain;
-            this.adsrSustainVal.textContent = this.adsrParams.sustain.toFixed(2);
-        }
-        if (this.adsrReleaseSlider) {
-            this.adsrReleaseSlider.value = this.adsrParams.release;
-            this.adsrReleaseVal.textContent = this.adsrParams.release.toFixed(2);
-        }
+        // Update UI using helper method
+        this.updateAdsrUIFromParams();
         
-        this.updateVoiceAdsr();
+        this.adsrLoadedFromSf2 = false;
         console.log('ADSR reset to defaults');
     }
 
@@ -400,6 +385,35 @@ export class UIManager {
         } catch (e) {
             console.warn('Failed to update voice ADSR params:', e);
         }
+    }
+
+    /**
+     * Update ADSR UI sliders and displays from current adsrParams
+     * Called after loading ADSR values from SF2
+     */
+    updateAdsrUIFromParams() {
+        // Update slider values and text displays
+        if (this.adsrAttackSlider) {
+            this.adsrAttackSlider.value = this.adsrParams.attack;
+            this.adsrAttackVal.textContent = this.adsrParams.attack.toFixed(3);
+        }
+        if (this.adsrDecaySlider) {
+            this.adsrDecaySlider.value = this.adsrParams.decay;
+            this.adsrDecayVal.textContent = this.adsrParams.decay.toFixed(2);
+        }
+        if (this.adsrSustainSlider) {
+            this.adsrSustainSlider.value = this.adsrParams.sustain;
+            this.adsrSustainVal.textContent = this.adsrParams.sustain.toFixed(2);
+        }
+        if (this.adsrReleaseSlider) {
+            this.adsrReleaseSlider.value = this.adsrParams.release;
+            this.adsrReleaseVal.textContent = this.adsrParams.release.toFixed(2);
+        }
+        
+        // Also update voice parameters
+        this.updateVoiceAdsr();
+        
+        console.log('updateAdsrUIFromParams: UI updated with ADSR values:', this.adsrParams);
     }
 
     /**
@@ -946,7 +960,7 @@ export class UIManager {
     /**
      * Select a preset and apply it to the current track
      */
-    selectPreset(preset) {
+    async selectPreset(preset) {
         console.log(`Selected preset: ${preset.fullName} (globalIndex: ${preset.globalIndex}, localIndex: ${preset.localIndex}, font: ${preset.fontId})`);
 
         if (!this.app.audioEngine) {
@@ -964,12 +978,11 @@ export class UIManager {
             preset.fontId
         );
 
-        // Update preset selector dropdown
-        const presetSelector = document.getElementById('preset-selector');
-        if (presetSelector) {
-            presetSelector.value = preset.index;
-            presetSelector.disabled = false;
-        }
+        // Load ADSR values from SF2 for the new preset
+        await this.loadAdsrFromSf2();
+        
+        // Update UI sliders with loaded ADSR values
+        this.updateAdsrUIFromParams();
 
         // Highlight selected preset in the list
         const items = this.presetListContainer.querySelectorAll('.preset-item');

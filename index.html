@@ -74,11 +74,6 @@
             gap: 10px;
             margin-top: 20px;
         }
-        /* Preset Selector Visibility Fix */
-        #preset-selector {
-            color: #000000;
-            background-color: #ffffff;
-        }
         /* Track List Styles */
         .track-list-table {
             width: 100%;
@@ -280,22 +275,8 @@
                 <button id="btn-load-sf2" class="secondary-btn">SF2</button>
                 <input type="file" id="sf2-file-input" accept=".sf2" style="display: none;">
                 <button id="btn-preset-browser" class="secondary-btn">🎹 Presets</button>
-                <select id="preset-selector" class="preset-select" disabled>
-                    <option value="">-- No SF2 --</option>
-                </select>
                 <button id="btn-adsr" class="secondary-btn">🎛️ ADSR</button>
                 <button id="btn-filter" class="secondary-btn">🔊 Filter</button>
-                <select id="osc-preset-selector" class="preset-select">
-                    <option value="Sine">Sine</option>
-                    <option value="Square">Square</option>
-                    <option value="Sawtooth">Sawtooth</option>
-                    <option value="Triangle">Triangle</option>
-                    <option value="Synth Lead">Synth Lead</option>
-                    <option value="Synth Bass">Synth Bass</option>
-                    <option value="Pad">Pad</option>
-                    <option value="Pluck">Pluck</option>
-                    <option value="Bell">Bell</option>
-                </select>
                 <div id="status-display">Ready</div>
             </div>
         </header>

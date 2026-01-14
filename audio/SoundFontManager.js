@@ -557,11 +557,13 @@ export class SoundFontManager {
 
     /**
      * Get ADSR parameters for a preset
-     * ADSR generators:
-     * - Gen 33: attackVolEnv
-     * - Gen 34: decayVolEnv
-     * - Gen 35: releaseVolEnv
-     * - Gen 36: sustainVolEnv
+     * Volume Envelope generators (based on SFSPEC21.$pdf):
+     * - Gen 33: delayVolEnv
+     * - Gen 34: attackVolEnv
+     * - Gen 35: holdVolEnv
+     * - Gen 36: decayVolEnv
+     * - Gen 37: sustainVolEnv
+     * - Gen 38: releaseVolEnv
      * @param {string} fontId - Font identifier
      * @param {number} presetIndex - Preset index
      * @returns {Object} ADSR parameters { attack, decay, sustain, release }
@@ -579,39 +581,58 @@ export class SoundFontManager {
             return null;
         }
         
+        // Convert SF2 timecents to seconds
+        // timecents: 0 = 1 second, -1200 = 0.001 seconds, etc.
+        const timecentsToSeconds = (tc) => {
+            if (tc === undefined || tc === -32768) return 0.001; // Default
+            return Math.pow(2, tc / 1200);
+        };
+        
+        // Sustain is stored as attenuation in centibels (Generator 37)
+        // centibels / 10 = dB attenuation from peak
+        // Convert to linear scale for UI display
+        const centibelsToLinear = (cb) => {
+            if (cb === undefined || cb === -32768) return 0.7; // Default sustain
+            const db = cb / 10;  // centibels to dB
+            // Convert dB attenuation to linear (0dB = 1.0, -144dB = 0.0)
+            const linear = Math.pow(10, -db / 20);
+            return Math.max(0, Math.min(1, linear));
+        };
+        
         // Find the first non-global zone with an instrument to get ADSR params
-        for (const zone of preset.zones) {
-            if (zone.isGlobal) continue;
-            if (zone.instrumentIndex === undefined) continue;
+        // NOTE: ADSR values are typically stored in the instrument zone (igen), not preset zone (pgen)
+        for (const pzone of preset.zones) {
+            if (pzone.isGlobal) continue;
+            if (pzone.instrumentIndex === undefined) continue;
             
-            const generators = zone.generators;
-            if (!generators) continue;
+            const inst = font.instruments[pzone.instrumentIndex];
+            if (!inst || !inst.zones) continue;
             
-            // Convert SF2 timecents to seconds
-            // timecents: 0 = 1 second, -1200 = 0.001 seconds, etc.
-            const timecentsToSeconds = (tc) => {
-                if (tc === undefined || tc === -32768) return 0.001; // Default
-                return Math.pow(2, tc / 1200);
-            };
-            
-            // Sustain is stored as attenuation in dB (0-144 dB)
-            // Convert to 0-1 scale (0 dB = 1.0, 144 dB = 0.0)
-            const attenuationToSustain = (attn) => {
-                if (attn === undefined || attn === -32768) return 0.7; // Default sustain
-                // Convert attenuation to linear 0-1 scale
-                const linear = Math.pow(10, -attn / 20);
-                return Math.max(0, Math.min(1, linear));
-            };
-            
-            const adsr = {
-                attack: timecentsToSeconds(generators[33]),  // attackVolEnv
-                decay: timecentsToSeconds(generators[34]),   // decayVolEnv
-                sustain: attenuationToSustain(generators[36]), // sustainVolEnv
-                release: timecentsToSeconds(generators[35])   // releaseVolEnv
-            };
-            
-            console.log(`SoundFontManager: ADSR params for preset ${presetIndex}:`, adsr);
-            return adsr;
+            // Look through instrument zones to find ADSR params
+            for (const izone of inst.zones) {
+                if (izone.isGlobal) continue;
+                
+                const generators = izone.generators;
+                if (!generators) continue;
+                
+                // Check if this zone has Volume Envelope values (gens 33-38)
+                if (generators[34] === undefined && generators[36] === undefined && 
+                    generators[37] === undefined && generators[38] === undefined) {
+                    continue; // No Volume Env in this zone, try next
+                }
+                
+                const adsr = {
+                    attack: timecentsToSeconds(generators[34]),  // attackVolEnv (Gen 34)
+                    decay: Math.min(4, timecentsToSeconds(generators[36])),   // decayVolEnv (Gen 36)
+                    sustain: centibelsToLinear(generators[37]), // sustainVolEnv (Gen 37)
+                    release: timecentsToSeconds(generators[38])   // releaseVolEnv (Gen 38)
+                };
+                
+                console.log(`[SF2Debug] ADSR from instrument zone: delay=${generators[33]}, attack=${generators[34]}, hold=${generators[35]}, decay=${generators[36]}, sustain=${generators[37]}, release=${generators[38]}`);
+                console.log(`[SF2Debug] ADSR converted values:`, adsr);
+                
+                return adsr;
+            }
         }
         
         // No zone found, return default values
@@ -621,6 +642,76 @@ export class SoundFontManager {
             decay: 0.1,
             sustain: 0.7,
             release: 0.1
+        };
+    }
+
+    /**
+     * Get filter parameters for a preset
+     * Filter generators:
+     * - Gen 10: initialFilterCutoff (in cents)
+     * - Gen 9: initialFilterQ (in cents)
+     * @param {string} fontId - Font identifier
+     * @param {number} presetIndex - Preset index
+     * @returns {Object} Filter parameters { cutoff, resonance }
+     */
+    getPresetFilterParams(fontId, presetIndex) {
+        const font = this.fonts.get(fontId);
+        if (!font) {
+            console.warn(`SoundFontManager: Font ${fontId} not found`);
+            return null;
+        }
+        
+        const preset = font.presets[presetIndex];
+        if (!preset || !preset.zones) {
+            console.warn(`SoundFontManager: Preset ${presetIndex} not found`);
+            return null;
+        }
+        
+        // Convert SF2 cents to Hz
+        // initialFilterCutoff: cents from 8Hz (4500 cents below A4)
+        // Formula: Hz = 8 * 2^((cents - 4500) / 1200)
+        const centsToHz = (cents) => {
+            if (cents === undefined || cents === -32768) return 20000; // Default max freq
+            const hz = 8 * Math.pow(2, (cents - 4500) / 1200);
+            return Math.max(8, Math.min(20000, hz));
+        };
+        
+        // Q value: 0-96 dB, convert to resonance (0-20 approx)
+        const centsToResonance = (q) => {
+            if (q === undefined || q === -32768) return 1;
+            return Math.max(0.1, Math.min(20, q / 10));
+        };
+        
+        // NOTE: Filter values are typically stored in the instrument zone (igen), not preset zone (pgen)
+        for (const pzone of preset.zones) {
+            if (pzone.isGlobal) continue;
+            if (pzone.instrumentIndex === undefined) continue;
+            
+            const inst = font.instruments[pzone.instrumentIndex];
+            if (!inst || !inst.zones) continue;
+            
+            // Look through instrument zones to find filter params
+            for (const izone of inst.zones) {
+                if (izone.isGlobal) continue;
+                
+                const generators = izone.generators;
+                if (!generators) continue;
+                
+                const cutoff = centsToHz(generators[8]);  // initialFilterCutoff
+                const resonance = centsToResonance(generators[9]); // initialFilterQ
+                
+                console.log(`[SF2Debug] Filter from instrument zone: generators[8]=${generators[8]}, generators[9]=${generators[9]}`);
+                console.log(`[SF2Debug] Filter converted: cutoff=${cutoff}Hz, resonance=${resonance}`);
+                
+                return { cutoff, resonance };
+            }
+        }
+        
+        // No zone found, return default values
+        console.log(`SoundFontManager: No filter zone found for preset ${presetIndex}, using defaults`);
+        return {
+            cutoff: 20000,
+            resonance: 1
         };
     }
 

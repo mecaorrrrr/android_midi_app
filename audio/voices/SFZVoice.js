@@ -166,7 +166,7 @@ export class SFZVoice {
             this.attackTime = Math.max(0.001, region.attack);
         }
         if (region.decay !== undefined) {
-            this.decayTime = Math.max(0.001, region.decay);
+            this.decayTime = Math.min(4, Math.max(0.001, region.decay));
         }
         if (region.sustain !== undefined) {
             this.sustainLevel = Math.max(0, Math.min(100, region.sustain)) / 100;
@@ -223,7 +223,7 @@ export class SFZVoice {
             this.attackTime = Math.max(0.001, region.ampeg_attack);
         }
         if (region.ampeg_decay !== undefined) {
-            this.decayTime = Math.max(0.001, region.ampeg_decay);
+            this.decayTime = Math.min(4, Math.max(0.001, region.ampeg_decay));
         }
         if (region.ampeg_sustain !== undefined) {
             this.sustainLevel = Math.max(0, Math.min(100, region.ampeg_sustain)) / 100;

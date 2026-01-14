@@ -34,7 +34,8 @@ export class SF2Voice {
         // ADSR parameters
         this.attackTime = 0.001;
         this.decayTime = 0.1;
-        this.sustainLevel = 0.7;
+        this.sustainAttenuationDb = 0;  // Generator 36 / 10 (デシベル単位の減衰量)
+        this.sustainLevel = 0.7;  // 後方互換性のため維持（使用推奨せず）
         this.releaseTimeValue = 0.1;
         
         // Filter parameters
@@ -134,15 +135,15 @@ export class SF2Voice {
             console.log(`[DEBUG] SF2Voice: source=${this.source ? 'connected' : 'null'}, filter=${this.filter ? 'connected' : 'null'}, gainNode=${this.gainNode ? 'connected' : 'null'}`);
             console.log(`[DEBUG] SF2Voice: output node type=${this.output?.constructor?.name || 'null'}, output destination nodes=${this.output?. destinations?.length || 0}`);
             
-            // Set initial gain
-            const initialGain = (velocity / 127) * this.sustainLevel;
+            // Calculate peak gain from velocity (no sustainLevel multiplication)
+            const peakGain = Math.max(0, velocity / 127);
             this.gainNode.gain.setValueAtTime(0, this.ctx.currentTime);
             
             // Start envelope
-            this.startEnvelope(initialGain, duration);
+            this.startEnvelope(peakGain, duration);
             
             // Debug: Check envelope scheduling
-            console.log(`[DEBUG] SF2Voice: initialGain=${initialGain.toFixed(4)}, sustainLevel=${this.sustainLevel.toFixed(4)}`);
+            console.log(`[DEBUG] SF2Voice: peakGain=${peakGain.toFixed(4)}, sustainAttenuationDb=${this.sustainAttenuationDb.toFixed(4)}`);
             console.log(`[DEBUG] SF2Voice: attack=${this.attackTime.toFixed(4)}s, decay=${this.decayTime.toFixed(4)}s, release=${this.releaseTimeValue.toFixed(4)}s`);
             
             // Start source
@@ -172,7 +173,7 @@ export class SF2Voice {
         // If custom ADSR params are provided, use them
         if (customParams) {
             this.attackTime = customParams.attack || 0.001;
-            this.decayTime = customParams.decay || 0.1;
+            this.decayTime = Math.min(4, customParams.decay || 0.1);
             this.sustainLevel = customParams.sustain !== undefined ? customParams.sustain : 0.7;
             this.releaseTimeValue = customParams.release || 0.1;
             return;
@@ -185,15 +186,18 @@ export class SF2Voice {
         
         // Generator 34: decayVolEnv (timecents, -12000 to 0)
         const decayGen = this.getGeneratorValue(zone, presetZone, 34);
-        this.decayTime = decayGen !== null ? this.timecentsToSeconds(decayGen) : 0.1;
+        this.decayTime = Math.min(4, decayGen !== null ? this.timecentsToSeconds(decayGen) : 0.1);
         
         // Generator 36: sustainVolEnv (centibels, 0 to -1440, positive = quieter)
         const sustainGen = this.getGeneratorValue(zone, presetZone, 36);
         if (sustainGen !== null) {
-            this.sustainLevel = 1 - (Math.abs(sustainGen) / 1440);
+            // センチベルを10で割ってデシベルに変換（減衰量）
+            this.sustainAttenuationDb = Math.abs(sustainGen / 10);
         } else {
-            this.sustainLevel = 0.7;
+            this.sustainAttenuationDb = 0;
         }
+        // 後方互換性のため維持（使用しないことを推奨）
+        this.sustainLevel = 0.7;
         
         // Generator 35: releaseVolEnv (timecents, -12000 to 0)
         const releaseGen = this.getGeneratorValue(zone, presetZone, 35);
@@ -327,22 +331,17 @@ export class SF2Voice {
         this.gainNode.gain.setValueAtTime(0, now);
         this.gainNode.gain.linearRampToValueAtTime(targetGain, attackEnd);
         
-        // Decay to sustain
-        this.gainNode.gain.linearRampToValueAtTime(
-            targetGain * this.sustainLevel, 
-            decayEnd
-        );
+        // Decay to sustain: peakGainからsustainAttenuationDbだけ減衰
+        const sustainGain = Math.max(0, targetGain - this.sustainAttenuationDb);
+        this.gainNode.gain.linearRampToValueAtTime(sustainGain, decayEnd);
         
         // Hold at sustain until release
-        this.gainNode.gain.setValueAtTime(
-            targetGain * this.sustainLevel, 
-            decayEnd
-        );
+        this.gainNode.gain.setValueAtTime(sustainGain, decayEnd);
         
         // Schedule release (only if releaseStart is after decayEnd)
         if (releaseStart >= decayEnd) {
             this.gainNode.gain.setValueAtTime(
-                targetGain * this.sustainLevel, 
+                sustainGain, 
                 releaseStart
             );
             this.gainNode.gain.linearRampToValueAtTime(0, releaseStart + this.releaseTimeValue);

@@ -7,7 +7,7 @@
 export class AudioManager {
     constructor() {
         this.engine = null;
-        this.mode = 'oscillator';
+        this.mode = 'sf2';
         this.legacyMode = true; // Use legacy implementation by default
         
         // Track instrument settings (for backward compatibility)
@@ -264,16 +264,8 @@ export class AudioManager {
         } else if (this.mode === 'sfz' && this.regions.length > 0) {
             this.playSFZNote(midi, duration, trackId, velocity);
         } else {
-            this.playOscillator(midi, duration, trackId, velocity);
+            console.warn("AudioManager: No audio mode active. Please load SF2 or SFZ first.");
         }
-    }
-
-    /**
-     * Play oscillator (fallback)
-     */
-    async playOscillator(midi, duration = 0.2, trackId = 0, velocity = 100) {
-        const engine = await this.init();
-        engine.playOscillator(midi, duration, trackId, velocity);
     }
 
     /**

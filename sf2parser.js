@@ -79,7 +79,9 @@ export class SF2Parser {
 
             if (subId === 'smpl') {
                 // 16-bit sample data
-                this.sampleData = new Int16Array(this.buffer, offset + 8, subSize / 2);
+                const sampleOffset = offset + 8;
+                const sampleCount = subSize / 2;
+                this.sampleData = new Int16Array(this.buffer, sampleOffset, sampleCount);
             }
 
             offset += 8 + subSize;
@@ -213,12 +215,17 @@ export class SF2Parser {
             const preset = this.presets[i];
             const bagStart = preset.bagIndex;
             const bagEnd = i + 1 < this.presets.length ? 
-                this.presets[i + 1].bagIndex : presetBags.length - 1;
+                this.presets[i + 1].bagIndex : presetBags.length;
+            
+    
 
             preset.zones = [];
             let globalGenerators = {};
             
             for (let b = bagStart; b < bagEnd; b++) {
+                if (b >= presetBags.length) {
+                    break;
+                }
                 const bag = presetBags[b];
                 const genStart = bag.genIndex;
                 const genEnd = b + 1 < presetBags.length ? 
@@ -263,12 +270,15 @@ export class SF2Parser {
             const inst = this.instruments[i];
             const bagStart = inst.bagIndex;
             const bagEnd = i + 1 < this.instruments.length ? 
-                this.instruments[i + 1].bagIndex : instBags.length - 1;
+                this.instruments[i + 1].bagIndex : instBags.length;
 
             inst.zones = [];
             let globalGenerators = {};
             
             for (let b = bagStart; b < bagEnd; b++) {
+                if (b >= instBags.length) {
+                    break;
+                }
                 const bag = instBags[b];
                 const genStart = bag.genIndex;
                 const genEnd = b + 1 < instBags.length ? 

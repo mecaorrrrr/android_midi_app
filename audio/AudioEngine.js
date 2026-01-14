@@ -1,7 +1,7 @@
 /**
  * AudioEngine - Main audio engine for Android MIDI App
  * Acts as a facade for the audio subsystem, delegating to specialized managers.
- * Phase 3: Added SFZ support, effects chain, and OscVoice fallback.
+ * Phase 3: Added SFZ support and effects chain.
  */
 
 export class AudioEngine {
@@ -30,17 +30,14 @@ export class AudioEngine {
             program: 0, 
             presetIndex: -1,
             fontId: null,
-            type: 'sf2' // 'sf2', 'sfz', 'osc'
+            type: 'sf2' // 'sf2', 'sfz'
         }));
         
         // SFZ data storage
         this.sfzData = null;
         this.sfzParser = null;
         
-        // Oscillator presets
-        this.oscPreset = 'Sine';
-        
-        this.mode = 'oscillator'; // 'oscillator', 'sfz', 'sf2'
+        this.mode = 'sf2'; // 'sfz', 'sf2'
     }
 
     /**
@@ -214,6 +211,19 @@ export class AudioEngine {
         if (trackId >= 0 && trackId < 8) {
             this.trackInstruments[trackId] = { bank, program, presetIndex, fontId };
             console.log(`AudioEngine: Track ${trackId} instrument set to Bank:${bank} Prog:${program} PresetIndex:${presetIndex}`);
+            
+            // Log ADSR and filter params when preset changes
+            if (presetIndex >= 0 && fontId) {
+                const adsrParams = this.getCurrentPresetAdsrParams();
+                if (adsrParams) {
+                    console.log(`[SF2Debug] ADSR: A=${adsrParams.attack.toFixed(3)} D=${adsrParams.decay.toFixed(3)} S=${adsrParams.sustain.toFixed(2)} R=${adsrParams.release.toFixed(3)}`);
+                }
+                
+                const filterParams = this.getCurrentPresetFilterParams();
+                if (filterParams) {
+                    console.log(`[SF2Debug] Filter: cutoff=${filterParams.cutoff}Hz resonance=${filterParams.resonance}`);
+                }
+            }
         }
     }
 
@@ -394,112 +404,6 @@ export class AudioEngine {
     }
 
     /**
-     * Set oscillator preset
-     */
-    setOscPreset(presetName) {
-        this.oscPreset = presetName;
-    }
-
-    /**
-     * Get available oscillator presets
-     */
-    getOscPresets() {
-        return ['Sine', 'Square', 'Sawtooth', 'Triangle', 'Synth Lead', 'Synth Bass', 'Pad', 'Pluck', 'Bell', 'Electric Piano', 'Vibraphone'];
-    }
-
-    /**
-     * Play oscillator note (fallback voice)
-     */
-    async playOscillator(midi, duration = 0.5, trackId = 0, velocity = 100) {
-        console.log("[DEBUG] playOscillator: called with midi=", midi, "trackId=", trackId);
-        
-        await this.init();
-        this.resume();
-        
-        console.log("[DEBUG] playOscillator: init completed, checking voiceManager");
-        
-        try {
-            const { OscVoice, getOscillatorPreset } = await import('./voices/OscVoice.js');
-            
-            // Get preset parameters
-            const preset = getOscillatorPreset(this.oscPreset);
-            console.log("[DEBUG] playOscillator: preset=", this.oscPreset);
-            
-            // Initialize VoiceManager for oscillator
-            if (!this.voiceManager) {
-                console.log("[DEBUG] playOscillator: creating VoiceManager");
-                const { VoiceManager } = await import('./VoiceManager.js');
-                this.voiceManager = new VoiceManager(this.ctx, 64, this); // Pass 'this' for filter propagation
-                this.voiceManager.setMasterOutput(this.masterGain);
-                
-                // Inject effects chain output
-                if (this.effectChain) {
-                    this.voiceManager.setEffectsOutput(this.effectChain.getInput());
-                    console.log("[DEBUG] playOscillator: VoiceManager connected to effect chain");
-                }
-            }
-            
-            // Ensure effects are connected
-            this.ensureEffectsConnected();
-            
-            console.log("[DEBUG] playOscillator: calling voiceManager.playOscNote");
-            
-            // Play using VoiceManager
-            await this.voiceManager.playOscNote(
-                preset,
-                midi,
-                velocity,
-                duration,
-                trackId
-            );
-            
-            console.log("[DEBUG] playOscillator: playOscNote completed");
-            
-        } catch (e) {
-            console.error("AudioEngine: Failed to play oscillator:", e);
-            
-            // Fallback to direct oscillator
-            this.playOscillatorDirect(midi, duration, trackId, velocity);
-        }
-    }
-
-    /**
-     * Direct oscillator playback (no VoiceManager)
-     */
-    playOscillatorDirect(midi, duration = 0.2, trackId = 0, velocity = 100) {
-        if (!this.ctx) this.init();
-        this.resume();
-
-        const osc = this.ctx.createOscillator();
-        const envelope = this.ctx.createGain();
-        const pan = this.ctx.createStereoPanner();
-
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(this.midiToFreq(midi), this.ctx.currentTime);
-
-        const gainVal = (velocity / 127) * 0.3;
-        envelope.gain.setValueAtTime(0, this.ctx.currentTime);
-        envelope.gain.linearRampToValueAtTime(gainVal, this.ctx.currentTime + 0.01);
-        envelope.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
-
-        // Pan based on track
-        pan.pan.value = (trackId - 3.5) / 4;
-
-        osc.connect(envelope);
-        envelope.connect(pan);
-        
-        // Connect to effects or direct to master
-        if (this.effectsEnabled && this.effectChain) {
-            pan.connect(this.effectChain.getInput());
-        } else {
-            pan.connect(this.masterGain);
-        }
-
-        osc.start();
-        osc.stop(this.ctx.currentTime + duration + 0.1);
-    }
-
-    /**
      * Get list of presets from loaded soundfonts
      */
     getPresets() {
@@ -583,9 +487,8 @@ export class AudioEngine {
             // Use legacy SFZ implementation - would need to be migrated
             console.warn("AudioEngine: SFZ playback via legacy engine not implemented yet");
         } else {
-            // Use oscillator fallback
-            console.log(`[DEBUG] AudioEngine.playNote: using oscillator fallback`);
-            this.playOscillator(midi, duration, trackId, velocity);
+            // No fallback - require SF2 or SFZ
+            console.warn("AudioEngine: No audio mode active. Please load SF2 or SFZ first.");
         }
     }
 
@@ -614,7 +517,30 @@ export class AudioEngine {
             return null;
         }
         
-        return this.soundFontManager.getPresetAdsrParams(instrument.fontId, instrument.presetIndex);
+        const result = this.soundFontManager.getPresetAdsrParams(instrument.fontId, instrument.presetIndex);
+        console.log(`[SF2Debug] AudioEngine.getCurrentPresetAdsrParams: fontId=${instrument.fontId}, presetIndex=${instrument.presetIndex}, result=`, result);
+        return result;
+    }
+    
+    /**
+     * Get filter parameters for the current track's preset
+     * @returns {Object} Filter parameters { cutoff, resonance }
+     */
+    getCurrentPresetFilterParams() {
+        if (!this.soundFontManager) {
+            console.warn('AudioEngine: SoundFontManager not available');
+            return null;
+        }
+        
+        const trackId = 0; // Use first track as default
+        const instrument = this.trackInstruments[trackId];
+        
+        if (!instrument || !instrument.fontId || instrument.presetIndex < 0) {
+            console.warn('AudioEngine: No valid preset selected');
+            return null;
+        }
+        
+        return this.soundFontManager.getPresetFilterParams(instrument.fontId, instrument.presetIndex);
     }
 
     /**

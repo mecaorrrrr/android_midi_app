@@ -55,10 +55,6 @@ class App {
                 document.getElementById('status-display').textContent = "Loading SFZ...";
                 const success = await this.audio.loadSFZ(e.target.files);
                 document.getElementById('status-display').textContent = success ? "SFZ Loaded" : "Load Failed";
-                // Clear SF2 preset selector when loading SFZ
-                const presetSel = document.getElementById('preset-selector');
-                presetSel.innerHTML = '<option value="">-- SFZ Mode --</option>';
-                presetSel.disabled = true;
             }
         });
 
@@ -83,14 +79,11 @@ class App {
                 
                 if (success) {
                     document.getElementById('status-display').textContent = "SF2 Loaded";
-                    await this.populatePresetSelector();
                     await this.validateTracksAgainstSF2();
                     
                     // Load ADSR parameters from SF2 for the current track
-                    const adsrParams = audioEngine.getCurrentPresetAdsrParams();
-                    if (adsrParams && this.ui) {
-                        this.ui.adsrParams = adsrParams;
-                        console.log('main.js: ADSR params loaded from SF2:', adsrParams);
+                    if (this.ui) {
+                        await this.ui.loadAdsrFromSf2();
                     }
                     
                     // Update preset browser if open
@@ -103,33 +96,6 @@ class App {
                 
                 // Hide loading UI
                 this.ui.hideLoading();
-            }
-        });
-
-        document.getElementById('preset-selector').addEventListener('change', async (e) => {
-            const idx = parseInt(e.target.value);
-            if (!isNaN(idx) && idx >= 0) {
-                // Use new AudioEngine
-                const audioEngine = await this.getAudioEngine();
-                const presets = audioEngine.getPresets();
-                if (presets && presets[idx]) {
-                    const preset = presets[idx];
-                    
-                    console.log(`[UI] Selected Preset Index: ${idx}, Name: ${preset.name}`);
-                    console.log(`[UI] Bank: ${preset.bank}, Program: ${preset.preset}`);
-
-                    // Update Track
-                    const track = this.songData.tracks[this.currentTrackId];
-                    track.bank = preset.bank;
-                    track.program = preset.preset;
-                    track.presetIndex = idx;
-
-                    audioEngine.selectPreset(this.currentTrackId, idx);
-                    console.log(`[UI] Track ${this.currentTrackId + 1} updated to Bank:${track.bank} Program:${track.program} Index:${idx}`);
-
-                    // Preview Note
-                    audioEngine.playNote(60, 0.5, this.currentTrackId);
-                }
             }
         });
 
@@ -400,12 +366,11 @@ class App {
         addMenuItem('BPM', () => this.addBpm());
         addMenuItem('Time Sig', () => this.addTimeSig());
 
-        // Insert before preset selector
-        const presetSel = document.getElementById('preset-selector');
-        if (presetSel && presetSel.parentElement) {
-            // Insert navigation first, then ADD button
-            presetSel.parentElement.insertBefore(navContainer, presetSel);
-            presetSel.parentElement.insertBefore(addBtn, presetSel);
+        // Insert ADD button
+        const status = document.getElementById('status-display');
+        if (status && status.parentElement) {
+            status.parentElement.insertBefore(navContainer, status);
+            status.parentElement.insertBefore(addBtn, status);
         }
         document.body.appendChild(ribbon);
     }
@@ -651,25 +616,7 @@ class App {
         const track = this.songData.tracks[this.currentTrackId];
         const presets = audioEngine.getPresets();
 
-        // Update Preset Selector if SF2 loaded
-        const presetSel = document.getElementById('preset-selector');
-        
-        if (audioEngine.mode === 'sf2' && presets.length > 0) {
-            // Find index matching track bank/program
-            const matchingPreset = presets.find(p => 
-                p.bank === track.bank && p.preset === track.program
-            );
-            
-            if (matchingPreset) {
-                const idx = presets.indexOf(matchingPreset);
-                presetSel.value = idx;
-                presetSel.disabled = false;
-            } else {
-                // Use stored presetIndex or fallback to 0
-                presetSel.value = track.presetIndex || 0;
-                presetSel.disabled = false;
-            }
-        }
+        // Preset selector removed - presets are now selected via preset browser
     }
 
     loop(timestamp) {
@@ -884,42 +831,6 @@ class App {
                     audioEngine.playNote(note.pitch, note.duration * (60 / currentBpm), track.id, velocity);
                 }
             }
-        }
-    }
-
-    async populatePresetSelector() {
-        const audioEngine = await this.getAudioEngine();
-        const presets = audioEngine.getPresets();
-        const selector = document.getElementById('preset-selector');
-        
-        // Sort presets by Bank then Program
-        const sortedPresets = [...presets].sort((a, b) => {
-            if (a.bank !== b.bank) return a.bank - b.bank;
-            return a.preset - b.preset;
-        });
-
-        selector.innerHTML = '';
-        sortedPresets.forEach((preset) => {
-            const opt = document.createElement('option');
-            opt.value = preset.globalIndex;  // Use globalIndex for the value
-            opt.textContent = `${preset.bank}:${preset.preset} ${preset.name}`;
-            selector.appendChild(opt);
-        });
-
-        selector.disabled = false;
-
-        // Select first preset (sorted) for current track
-        if (sortedPresets.length > 0) {
-            const first = sortedPresets[0];
-            // Use globalIndex to select and store
-            audioEngine.selectPreset(this.currentTrackId, first.globalIndex);
-            selector.value = first.globalIndex;
-            
-            // Update current track data - store globalIndex
-            const track = this.songData.tracks[this.currentTrackId];
-            track.bank = first.bank;
-            track.program = first.preset;
-            track.presetIndex = first.globalIndex;
         }
     }
 }

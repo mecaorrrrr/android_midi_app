@@ -12,8 +12,7 @@ export class VoiceManager {
         this.activeVoices = new Map(); // voiceId -> voice object
         this.voicePool = {
             sf2: [],
-            sfz: [],
-            osc: []
+            sfz: []
         };
         this.nextVoiceId = 0;
         
@@ -267,23 +266,6 @@ export class VoiceManager {
     }
 
     /**
-     * Play an oscillator note
-     */
-    async playOscNote(presetParams, midi, velocity, duration, trackId) {
-        // Allocate oscillator voice
-        const voice = await this.allocateVoice('osc', trackId);
-        if (!voice) {
-            console.warn("VoiceManager: Failed to allocate oscillator voice");
-            return;
-        }
-        
-        // Start playback
-        await voice.start(presetParams, midi, velocity, duration);
-        
-        console.log(`[DEBUG] VoiceManager.playOscNote: Played ${presetParams.waveform || 'sine'} at MIDI ${midi}`);
-    }
-
-    /**
      * Allocate a voice for a track
      * Returns a voice instance or null if max voices reached
      */
@@ -357,10 +339,6 @@ export class VoiceManager {
             case 'sfz': {
                 const { SFZVoice } = await import('./voices/SFZVoice.js');
                 return new SFZVoice(this.ctx, output);
-            }
-            case 'osc': {
-                const { OscVoice } = await import('./voices/OscVoice.js');
-                return new OscVoice(this.ctx, output, this.adsrParams, this.filterParams);
             }
             default:
                 console.warn(`VoiceManager: Unknown voice type: ${type}`);
@@ -437,8 +415,7 @@ export class VoiceManager {
         // Clear voice pool
         this.voicePool = {
             sf2: [],
-            sfz: [],
-            osc: []
+            sfz: []
         };
         
         // Dispose track channels
