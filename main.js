@@ -30,8 +30,8 @@ class App {
         this.ui = new UIManager(this);
         this.audio = new AudioManager();
         this.input = new InputManager(this);
-        
-        // NEW: Direct access to AudioEngine for testing new features
+
+        // Legacy AudioEngine reference removed
         this.audioEngine = null;
 
         this.lastTime = 0;
@@ -63,29 +63,28 @@ class App {
             if (e.target.files.length > 0) {
                 // Show loading UI
                 this.ui.showLoading('Loading SF2...');
-                
+
                 document.getElementById('status-display').textContent = "Loading SF2...";
-                
+
                 // Progress callback for loading UI
                 const progressCallback = ({ percent, message }) => {
                     this.ui.updateLoadingProgress(percent, message || 'Loading SF2...');
                 };
-                
+
                 // Use the new AudioEngine directly
                 const audioEngine = await this.getAudioEngine();
-                audioEngine.setProgressCallback(progressCallback);
-                
-                const success = await audioEngine.loadSF2(e.target.files[0]);
-                
+
+                const success = await audioEngine.loadSF2(e.target.files[0], { onProgress: progressCallback });
+
                 if (success) {
                     document.getElementById('status-display').textContent = "SF2 Loaded";
                     await this.validateTracksAgainstSF2();
-                    
+
                     // Load ADSR parameters from SF2 for the current track
                     if (this.ui) {
                         await this.ui.loadAdsrFromSf2();
                     }
-                    
+
                     // Update preset browser if open
                     if (this.ui && typeof this.ui.loadPresets === 'function') {
                         await this.ui.loadPresets();
@@ -93,7 +92,7 @@ class App {
                 } else {
                     document.getElementById('status-display').textContent = "SF2 Load Failed";
                 }
-                
+
                 // Hide loading UI
                 this.ui.hideLoading();
             }
@@ -116,18 +115,15 @@ class App {
         this.loop = this.loop.bind(this);
         requestAnimationFrame(this.loop);
     }
-    
+
     /**
      * Get or initialize the new AudioEngine (for testing new features)
      */
+    /**
+     * Get AudioEngine (Deprecated - returns AudioManager)
+     */
     async getAudioEngine() {
-        if (!this.audioEngine) {
-            const { AudioEngine } = await import('./audio/AudioEngine.js');
-            this.audioEngine = new AudioEngine();
-            await this.audioEngine.init();
-            console.log("AudioEngine initialized directly");
-        }
-        return this.audioEngine;
+        return this.audio;
     }
 
     saveState() {
@@ -235,7 +231,7 @@ class App {
         fileBtn.textContent = 'FILE';
         fileBtn.className = 'control-btn'; // Use existing class if available
         fileBtn.style.fontWeight = 'bold';
-        
+
         // Ribbon (Dropdown)
         const ribbon = document.createElement('div');
         ribbon.style.display = 'none';
@@ -253,7 +249,7 @@ class App {
             e.stopPropagation();
             const isVisible = ribbon.style.display === 'flex';
             ribbon.style.display = isVisible ? 'none' : 'flex';
-            
+
             const rect = fileBtn.getBoundingClientRect();
             ribbon.style.top = `${rect.bottom + window.scrollY + 5}px`;
             ribbon.style.left = `${rect.left + window.scrollX}px`;
@@ -302,28 +298,28 @@ class App {
         markerLabel.style.fontSize = '14px';
         markerLabel.style.marginRight = '4px';
         navContainer.appendChild(markerLabel);
-        
+
         const prevBtn = document.createElement('button');
         prevBtn.textContent = '◀';
         prevBtn.className = 'control-btn';
         prevBtn.title = 'Previous Marker';
         prevBtn.addEventListener('click', () => this.navigateToPrevMarker());
-        
+
         const nextBtn = document.createElement('button');
         nextBtn.textContent = '▶';
         nextBtn.className = 'control-btn';
         nextBtn.title = 'Next Marker';
         nextBtn.addEventListener('click', () => this.navigateToNextMarker());
-        
+
         navContainer.appendChild(prevBtn);
         navContainer.appendChild(nextBtn);
-        
+
         // Create ADD Button
         const addBtn = document.createElement('button');
         addBtn.textContent = 'ADD';
         addBtn.className = 'control-btn';
         addBtn.style.fontWeight = 'bold';
-        
+
         // Ribbon (Dropdown)
         const ribbon = document.createElement('div');
         ribbon.style.display = 'none';
@@ -341,7 +337,7 @@ class App {
             e.stopPropagation();
             const isVisible = ribbon.style.display === 'flex';
             ribbon.style.display = isVisible ? 'none' : 'flex';
-            
+
             const rect = addBtn.getBoundingClientRect();
             ribbon.style.top = `${rect.bottom + window.scrollY + 5}px`;
             ribbon.style.left = `${rect.left + window.scrollX}px`;
@@ -478,10 +474,10 @@ class App {
             const val = map[key];
             const div = document.createElement('div');
             div.className = 'mapping-item';
-            
+
             const label = document.createElement('span');
             label.textContent = key;
-            
+
             const btn = document.createElement('button');
             btn.className = 'mapping-btn';
             btn.textContent = `Btn ${val}`;
@@ -577,7 +573,7 @@ class App {
     async validateTracksAgainstSF2() {
         const audioEngine = await this.getAudioEngine();
         const presets = audioEngine.getPresets();
-        
+
         if (!presets || presets.length === 0) return;
 
         const defaultPreset = presets[0];
@@ -585,7 +581,7 @@ class App {
 
         this.songData.tracks.forEach(t => {
             // Check if current bank/program exists
-            const matchingPreset = presets.find(p => 
+            const matchingPreset = presets.find(p =>
                 p.bank === t.bank && p.preset === t.program
             );
 
@@ -629,18 +625,18 @@ class App {
             const currentBpm = this.transport.getBpmAt(this.cardinalTime);
             const beatsPerSecond = currentBpm / 60;
             const advance = beatsPerSecond * deltaTime;
-            
+
             let nextTime = this.cardinalTime + advance;
 
             if (this.isLooping && this.loopRegion) {
                 if (nextTime >= this.loopRegion.end) {
                     // Play until end of loop
                     this.checkAndPlayNotes(this.cardinalTime, this.loopRegion.end);
-                    
+
                     // Loop back
                     const remainder = nextTime - this.loopRegion.end;
                     this.cardinalTime = this.loopRegion.start + remainder;
-                    
+
                     // Play from start of loop
                     this.checkAndPlayNotes(this.loopRegion.start, this.cardinalTime);
                 } else {
@@ -837,7 +833,7 @@ class App {
 
 window.addEventListener('DOMContentLoaded', () => {
     window.app = new App();
-    
+
     // Debug helper: expose audioEngine globally
     window.getAudioEngine = async () => {
         if (window.app && window.app.audioEngine) {
@@ -845,16 +841,22 @@ window.addEventListener('DOMContentLoaded', () => {
         }
         return await window.app.getAudioEngine();
     };
-    
+
     // Debug helper: diagnose audio path
     window.diagnoseAudio = async () => {
-        const engine = await window.getAudioEngine();
-        if (engine && typeof engine.diagnoseAudioPath === 'function') {
-            engine.diagnoseAudioPath();
+        const audioManager = await window.getAudioEngine();
+        if (audioManager) {
+            console.log("=== Audio Manager Diagnosis ===");
+            console.log("Context State:", audioManager.ctx.state);
+            console.log("Synthesizer:", audioManager.synth ? "Initialized" : "Not Initialized");
+            if (audioManager.synth) {
+                console.log("Worklet Node:", audioManager.synth.workletNode);
+                console.log("Sound Bank Manager:", audioManager.synth.soundBankManager);
+            }
         } else {
-            console.error('AudioEngine not initialized or diagnoseAudioPath not available');
+            console.error('AudioManager not available');
         }
     };
-    
+
     console.log('Debug helpers available: getAudioEngine(), diagnoseAudio()');
 });

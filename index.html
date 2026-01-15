@@ -26,6 +26,7 @@
             justify-content: center;
             align-items: center;
         }
+
         .modal-content {
             background-color: #2d3436;
             padding: 20px;
@@ -36,20 +37,23 @@
             overflow-y: auto;
             border: 1px solid #555;
         }
+
         .mapping-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
             gap: 10px;
             margin: 20px 0;
         }
+
         .mapping-item {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            background: rgba(0,0,0,0.3);
+            background: rgba(0, 0, 0, 0.3);
             padding: 8px;
             border-radius: 4px;
         }
+
         .mapping-btn {
             background: #0984e3;
             border: none;
@@ -59,21 +63,33 @@
             cursor: pointer;
             min-width: 40px;
         }
+
         .mapping-btn.waiting {
             background: #e17055;
             animation: pulse 1s infinite;
         }
+
         @keyframes pulse {
-            0% { opacity: 1; }
-            50% { opacity: 0.5; }
-            100% { opacity: 1; }
+            0% {
+                opacity: 1;
+            }
+
+            50% {
+                opacity: 0.5;
+            }
+
+            100% {
+                opacity: 1;
+            }
         }
+
         .modal-actions {
             display: flex;
             justify-content: flex-end;
             gap: 10px;
             margin-top: 20px;
         }
+
         /* Track List Styles */
         .track-list-table {
             width: 100%;
@@ -81,29 +97,47 @@
             margin-top: 10px;
             font-size: 14px;
         }
-        .track-list-table th, .track-list-table td {
+
+        .track-list-table th,
+        .track-list-table td {
             padding: 10px;
             text-align: left;
             border-bottom: 1px solid #444;
         }
+
         .track-list-table th {
             color: #aaa;
             font-weight: normal;
         }
+
         .track-row {
             cursor: pointer;
             transition: background-color 0.2s;
         }
+
         .track-row:hover {
             background-color: rgba(255, 255, 255, 0.05);
         }
+
         .track-row.active {
             background-color: rgba(9, 132, 227, 0.3);
             border-left: 3px solid #0984e3;
         }
-        .status-on { color: #00b894; font-weight: bold; }
-        .status-off { color: #636e72; }
-        .status-mute { color: #d63031; font-weight: bold; }
+
+        .status-on {
+            color: #00b894;
+            font-weight: bold;
+        }
+
+        .status-off {
+            color: #636e72;
+        }
+
+        .status-mute {
+            color: #d63031;
+            font-weight: bold;
+        }
+
         .track-btn {
             background: #2d3436;
             border: 1px solid #636e72;
@@ -114,26 +148,31 @@
             font-size: 12px;
             min-width: 50px;
         }
+
         .track-btn.active {
             background: #00b894;
             color: white;
             border-color: #00cec9;
         }
+
         .track-btn.active-mute {
             background: #d63031;
             color: white;
             border-color: #ff7675;
         }
+
         /* Preset Browser Styles */
         .preset-browser {
             display: flex;
             flex-direction: column;
             gap: 15px;
         }
+
         .preset-search-box {
             display: flex;
             gap: 10px;
         }
+
         .preset-search-input {
             flex: 1;
             padding: 10px;
@@ -148,16 +187,18 @@
             display: flex;
             gap: 20px;
             padding: 10px;
-            background: rgba(0,0,0,0.2);
+            background: rgba(0, 0, 0, 0.2);
             border-radius: 5px;
             font-size: 12px;
             color: #b2bec3;
         }
+
         .preset-info span {
             display: flex;
             align-items: center;
             gap: 5px;
         }
+
         /* Loading Overlay Styles */
         .loading-overlay {
             display: none;
@@ -171,10 +212,12 @@
             justify-content: center;
             align-items: center;
         }
+
         .loading-content {
             text-align: center;
             color: #dfe6e9;
         }
+
         .loading-spinner {
             width: 50px;
             height: 50px;
@@ -184,14 +227,22 @@
             animation: spin 1s linear infinite;
             margin: 0 auto 15px;
         }
+
         @keyframes spin {
-            0% { transform: rotate(0deg); }
-            100% { transform: rotate(360deg); }
+            0% {
+                transform: rotate(0deg);
+            }
+
+            100% {
+                transform: rotate(360deg);
+            }
         }
+
         .loading-message {
             font-size: 16px;
             margin-bottom: 15px;
         }
+
         .loading-progress-container {
             width: 300px;
             height: 8px;
@@ -200,16 +251,19 @@
             overflow: hidden;
             margin: 0 auto 10px;
         }
+
         .loading-progress-bar {
             height: 100%;
             background: linear-gradient(90deg, #0984e3, #00cec9);
             width: 0%;
             transition: width 0.3s ease;
         }
+
         .loading-percent {
             font-size: 14px;
             color: #b2bec3;
         }
+
         /* ADSR Controls Styles */
         .adsr-controls {
             display: flex;
@@ -217,15 +271,18 @@
             gap: 15px;
             margin: 20px 0;
         }
+
         .adsr-param {
             display: flex;
             flex-direction: column;
             gap: 5px;
         }
+
         .adsr-param label {
             font-size: 14px;
             color: #dfe6e9;
         }
+
         .adsr-param input[type="range"] {
             width: 100%;
             height: 8px;
@@ -234,6 +291,7 @@
             border-radius: 4px;
             outline: none;
         }
+
         .adsr-param input[type="range"]::-webkit-slider-thumb {
             -webkit-appearance: none;
             width: 18px;
@@ -241,13 +299,15 @@
             background: #fff;
             border-radius: 50%;
             cursor: pointer;
-            box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
         }
+
         .adsr-buttons {
             display: flex;
             gap: 10px;
             margin-top: 10px;
         }
+
         .adsr-buttons button {
             flex: 1;
         }
@@ -338,7 +398,8 @@
             <h2>Preset Browser</h2>
             <div class="preset-browser">
                 <div class="preset-search-box">
-                    <input type="text" id="preset-search-input" class="preset-search-input" placeholder="Search presets...">
+                    <input type="text" id="preset-search-input" class="preset-search-input"
+                        placeholder="Search presets...">
                 </div>
                 <div class="preset-info">
                     <span id="preset-count">Presets: 0</span>
@@ -468,6 +529,14 @@
         </div>
     </div>
 
+    <script type="importmap">
+        {
+            "imports": {
+                "spessasynth_lib": "./libs/spessasynth_lib.js",
+                "spessasynth_core": "./libs/spessasynth_core.js"
+            }
+        }
+    </script>
     <script type="module" src="main.js"></script>
     <script>
         if ('serviceWorker' in navigator) {
