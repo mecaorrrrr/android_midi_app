@@ -347,11 +347,16 @@ export class VoiceManager {
     }
 
     /**
-     * Stop all active voices immediately
+     * Stop all active voices immediately (for panic/emergency situations)
      */
     panic() {
         for (const [voiceId, voice] of this.activeVoices) {
             voice.stop();
+            if (voice.stopImmediate) {
+                voice.stopImmediate();
+            } else {
+                voice.stop();
+            }
         }
         this.activeVoices.clear();
     }

@@ -421,9 +421,23 @@ export class SFZVoice {
     }
 
     /**
-     * Stop the voice immediately
+     * Stop the voice with natural release (ADSR Release phase)
+     * Uses the Release value from SFZ region for natural decay
      */
     stop() {
+        // If playing, transition to Release phase for natural decay
+        if (this.isPlaying && !this.isReleased) {
+            this.release();
+            return;
+        }
+        
+        // If already released or not playing, do immediate stop
+        this.stopImmediate();
+    }
+    /**
+     * Stop the voice immediately without release
+     */
+    stopImmediate() {
         if (this.source) {
             try {
                 this.source.stop(0);
