@@ -314,47 +314,48 @@ export class SF2Voice {
 
     /**
      * Start the ADSR envelope
+     * Improved to reduce clicking noise with smooth fade-in
      */
     startEnvelope(targetGain, duration) {
         const now = this.ctx.currentTime;
+        const fadeInTime = Math.min(0.005, this.attackTime * 0.5); // Small fade-in to prevent clicking
         const attackEnd = now + this.attackTime;
         const decayEnd = attackEnd + this.decayTime;
         
         // Calculate release start - ensure it's after decay phase
-        // This prevents release from starting before attack/decay completes
         let releaseStart = now + duration - this.releaseTimeValue;
         if (releaseStart < decayEnd) {
-            // If duration is too short, cap at decay end
             releaseStart = decayEnd;
         }
         
-        // Attack
-        this.gainNode.gain.setValueAtTime(0, now);
-        this.gainNode.gain.linearRampToValueAtTime(targetGain, attackEnd);
+        // Start from near-silence for smooth fade-in (exponential ramp requires positive value)
+        const startGain = 0.001;
+        this.gainNode.gain.setValueAtTime(startGain, now);
         
-        // Decay to sustain: peakGainからsustainAttenuationDbだけ減衰
-        const sustainGain = Math.max(0, targetGain - this.sustainAttenuationDb);
+        // Attack phase - exponential ramp for smoother onset
+        this.gainNode.gain.exponentialRampToValueAtTime(targetGain, attackEnd);
+        
+        // Decay to sustain
+        const sustainGain = Math.max(0.001, targetGain - this.sustainAttenuationDb);
         this.gainNode.gain.linearRampToValueAtTime(sustainGain, decayEnd);
         
         // Hold at sustain until release
         this.gainNode.gain.setValueAtTime(sustainGain, decayEnd);
         
-        // Schedule release (only if releaseStart is after decayEnd)
+        // Schedule release
         if (releaseStart >= decayEnd) {
-            this.gainNode.gain.setValueAtTime(
-                sustainGain, 
-                releaseStart
-            );
-            this.gainNode.gain.linearRampToValueAtTime(0, releaseStart + this.releaseTimeValue);
+            this.gainNode.gain.setValueAtTime(sustainGain, releaseStart);
+            // Use exponential ramp for smoother release
+            this.gainNode.gain.exponentialRampToValueAtTime(0.001, releaseStart + this.releaseTimeValue);
             this.releaseTime = releaseStart + this.releaseTimeValue;
         } else {
-            // If duration is too short, release immediately after decay
             this.releaseTime = decayEnd + 0.01;
         }
     }
 
     /**
      * Release the voice (called when note ends)
+     * Improved with smooth fade-out to prevent clicking
      */
     release() {
         if (!this.isPlaying || this.isReleased) return;
@@ -366,7 +367,8 @@ export class SF2Voice {
             const currentGain = this.gainNode.gain.value;
             this.gainNode.gain.cancelScheduledValues(now);
             this.gainNode.gain.setValueAtTime(currentGain, now);
-            this.gainNode.gain.linearRampToValueAtTime(0, now + this.releaseTimeValue);
+            // Use exponential ramp for smoother fade-out
+            this.gainNode.gain.exponentialRampToValueAtTime(0.001, now + this.releaseTimeValue);
         }
         
         this.isReleased = true;
