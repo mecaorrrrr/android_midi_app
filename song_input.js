@@ -336,12 +336,4 @@ export class SongInput {
         }
         this.app.showToast(`Pasted ${count} clip${count === 1 ? '' : 's'}`);
     }
-
-    updateInfo() {
-        const track = this.song.tracks[this.app.currentTrackId];
-        const clip = this.clipUnderCursor();
-        const pattern = clip ? getPattern(this.song, clip.patternId) : null;
-        const clipboard = this.state.clipboard ? ` | Clipboard: ${this.state.clipboard.length}` : '';
-        this.app.setCursorInfo(`Bar ${this.state.cursorBar + 1} | ${track.name} | ${pattern ? pattern.name : '-'}${clipboard}`);
-    }
 }

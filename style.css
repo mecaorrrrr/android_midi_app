@@ -1,47 +1,46 @@
 /* ------------------------------------------------------------------ Tokens
-   Single source of truth for colors and type. Canvas drawing reads the same
-   values through theme.js, so change them here only. */
+   Single source of truth for colors and type (hardware look: grey body, ink,
+   one red "trig" accent). Canvas drawing reads the same values through theme.js,
+   so change them here only. */
 :root {
-    --bg: #121417;
-    --surface-1: #1a1d21;
-    --surface-2: #22262b;
-    --surface-3: #2d3238;
-    --border: #353b42;
-    --border-strong: #4d555e;
-    --text: #e9ecef;
-    --text-muted: #a3abb4;
-    --text-dim: #6c757d;
+    --body: #cfcfca;            /* Unit body / app background */
+    --lane: #c5c5bf;            /* Track lanes, piano roll grid */
+    --lane-cur: #c9c9c3;        /* Lane of the selected track */
+    --lane-cur-border: #a3a39c;
+    --ink: #1c1c1a;             /* Clips, notes, main text */
+    --graphite: #5f5f5a;        /* Secondary text */
+    --text-off: #8f8f89;        /* Muted track names */
+    --line: #b1b1aa;            /* Grid / bar lines */
+    --row-line: #bcbcb5;        /* Piano roll row lines */
+    --ghost: #8f8f89;           /* Other tracks' notes */
+    --trig: #e4432d;            /* The one accent: cursor, playhead, loop, lit LEDs */
+    --clip-muted: #9f9f99;
+    --clip-note: #6d6d67;
+    --clip-note-muted: #bcbcb6;
 
-    --accent: #6c5ce7;
-    --accent-hover: #8173ec;
-    --selection: #00b894;
-    --loop: #00cec9;
-    --marker: #fdcb6e;
-    --playhead: #4dabf7;
-    --danger: #e05d5d;
+    /* Keys (hardware buttons) */
+    --key-top: #ebebe7;
+    --key-bottom: #dededa;
+    --key-pressed-top: #e2e2de;
+    --key-pressed-bottom: #d9d9d4;
+    --key-border: #b4b4ad;
+    --key-skirt: #a9a9a3;
+    --key-text: #3a3a37;
+    --key-white: #e2e2dd;       /* Piano roll white keys */
+    --led-on: #fdfdf8;
+    --led-rim: #8d8d86;
+    --led-off: #7e7e78;
 
-    /* Canvas grid */
-    --grid-line: #353b42;
-    --grid-bar: #5d666f;
-    --key-white: #e9ecef;
-    --key-black: #2d3238;
+    /* Parameter screen */
+    --oled: #141514;
+    --oled-text: #e8e8e2;
+    --oled-dim: #8f8f88;
+    --oled-line: #2e2f2d;
 
-    /* One color per track (clips and notes) */
-    --track-1: #fd79a8;
-    --track-2: #74b9ff;
-    --track-3: #55efc4;
-    --track-4: #ffeaa7;
-    --track-5: #a29bfe;
-    --track-6: #fab1a0;
-    --track-7: #81ecec;
-    --track-8: #ff7675;
-
-    --font-main: 'Outfit', sans-serif;
-    --font-mono: ui-monospace, 'Consolas', monospace;
-    --radius: 8px;
+    --font-main: 'Archivo', sans-serif;
+    --radius: 6px;
     --radius-sm: 4px;
-    --control-height: 34px;
-    --shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+    --shadow: 0 14px 34px rgba(40, 40, 35, 0.3);
 }
 
 * {
@@ -53,216 +52,187 @@
 }
 
 body {
-    background-color: var(--bg);
-    color: var(--text);
+    background: var(--body);
+    color: var(--ink);
     font-family: var(--font-main);
+    font-stretch: 90%;
     font-size: 14px;
     overflow: hidden;
     height: 100vh;
+    height: 100dvh;
     width: 100vw;
 }
 
 #app {
+    display: grid;
+    grid-template-rows: auto 1fr auto;
+    gap: 10px;
+    height: 100%;
+    padding: 12px 16px 6px;
+    padding-left: max(16px, env(safe-area-inset-left));
+    padding-right: max(16px, env(safe-area-inset-right));
+}
+
+/* ------------------------------------------------ Top: screen and keys */
+.top {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 18px;
+    height: 58px;
+}
+
+.oled {
+    position: relative;
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    min-width: 0;
+    padding: 0 16px;
+    overflow: hidden;
+    background: var(--oled);
+    color: var(--oled-text);
+    border-radius: 5px;
+    box-shadow: inset 0 0 0 3px #0b0c0b;
+}
+
+.oled-title {
+    position: relative;
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    min-width: 12em;
+    white-space: nowrap;
+}
+
+#oled-name {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+}
+
+.oled-title b {
+    font-size: 1.55em;
+    font-weight: 600;
+    font-stretch: 75%;
+}
+
+.oled-title .pat {
+    font-weight: 300;
+}
+
+.oled-title .pipe {
+    align-self: center;
+    width: 1px;
+    height: 1.2em;
+    background: #55554f;
+}
+
+.oled-sub {
+    font-size: 0.85em;
+    color: var(--oled-dim);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 16em;
+}
+
+/* Tapping the instrument name opens the (invisible) native preset list */
+.oled-title select {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    opacity: 0;
+    cursor: pointer;
+    font-size: 16px; /* Prevents zoom on iOS */
+}
+
+.oled-title select:disabled {
+    display: none;
+}
+
+.oled-params {
+    display: flex;
+    align-items: center;
+    gap: 20px;
+    min-width: 0;
+    white-space: nowrap;
+}
+
+.param {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    padding-left: 18px;
+    border-left: 1px solid var(--oled-line);
+}
+
+.param span {
+    font-size: 0.8em;
+    color: var(--oled-dim);
+}
+
+.param b {
+    font-size: 1.45em;
+    font-weight: 300;
+    font-stretch: 75%;
+}
+
+.keys {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.keys .sep {
+    width: 10px;
+}
+
+/* Hardware key: LED slot at the top, label printed below it */
+.k {
+    width: 64px;
+    height: 46px;
+    padding: 9px 0 8px;
     display: flex;
     flex-direction: column;
-    height: 100%;
-}
-
-/* ---------------------------------------------------------------- Controls */
-.btn {
-    height: var(--control-height);
-    padding: 0 0.9rem;
-    display: inline-flex;
     align-items: center;
-    justify-content: center;
-    gap: 0.4rem;
-    background: var(--surface-2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    color: var(--text);
-    font: inherit;
-    font-weight: 600;
-    letter-spacing: 0.5px;
+    justify-content: space-between;
+    border: 1px solid var(--key-border);
+    border-radius: 7px;
+    background: linear-gradient(180deg, var(--key-top) 0%, var(--key-bottom) 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75), 0 2px 0 var(--key-skirt), 0 4px 8px rgba(40, 40, 35, 0.12);
+    color: var(--key-text);
+    font-family: var(--font-main);
+    font-stretch: 100%;
+    font-weight: 500;
+    font-size: 11.5px;
+    letter-spacing: 0.03em;
     cursor: pointer;
-    transition: background 0.15s, border-color 0.15s;
-    white-space: nowrap;
 }
 
-.btn:hover {
-    background: var(--surface-3);
-    border-color: var(--border-strong);
+.k i {
+    width: 22px;
+    height: 4px;
+    border-radius: 2px;
+    background: #a9a9a2;
+    box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.25);
 }
 
-.btn:active {
-    transform: scale(0.96);
+.k.on {
+    color: var(--ink);
 }
 
-.btn.icon {
-    width: var(--control-height);
-    padding: 0;
-    font-size: 0.9rem;
+.k.on i {
+    background: var(--trig);
+    box-shadow: 0 0 6px rgba(228, 67, 45, 0.85), inset 0 0 0 1px rgba(255, 120, 90, 0.6);
 }
 
-.btn.primary {
-    background: var(--accent);
-    border-color: var(--accent);
+.k:active,
+.menu.open > .k {
+    transform: translateY(2px);
+    background: linear-gradient(180deg, var(--key-pressed-top) 0%, var(--key-pressed-bottom) 100%);
+    box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.14);
 }
 
-.btn.primary:hover {
-    background: var(--accent-hover);
-}
-
-.btn.active {
-    background: var(--accent);
-    border-color: var(--accent);
-}
-
-.btn.danger.active {
-    background: var(--danger);
-    border-color: var(--danger);
-}
-
-.btn.success.active {
-    background: var(--selection);
-    border-color: var(--selection);
-}
-
-.btn.small {
-    height: 26px;
-    padding: 0 0.6rem;
-    font-size: 0.8rem;
-}
-
-.select {
-    height: var(--control-height);
-    padding: 0 0.6rem;
-    background: var(--surface-2);
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    color: var(--text);
-    font: inherit;
-    font-size: 0.85rem;
-    min-width: 150px;
-    max-width: 220px;
-}
-
-.select option {
-    background: var(--surface-1);
-    color: var(--text);
-}
-
-.select:disabled {
-    opacity: 0.5;
-}
-
-.input {
-    width: 100%;
-    height: var(--control-height);
-    padding: 0 0.7rem;
-    background: var(--bg);
-    border: 1px solid var(--border-strong);
-    border-radius: var(--radius);
-    color: var(--text);
-    font: inherit;
-    user-select: text;
-}
-
-.input:focus {
-    outline: none;
-    border-color: var(--accent);
-}
-
-/* ------------------------------------------------------------------ Header */
-.app-header {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.5rem 1rem;
-    padding: 0.5rem 1rem;
-    background: var(--surface-1);
-    border-bottom: 1px solid var(--border);
-    z-index: 10;
-}
-
-.brand {
-    font-weight: 300;
-    font-size: 1.1rem;
-    letter-spacing: 1px;
-    white-space: nowrap;
-}
-
-.accent {
-    color: var(--accent);
-    font-weight: 600;
-}
-
-.toolbar {
-    display: flex;
-    flex-wrap: wrap;
-    align-items: center;
-    gap: 0.5rem;
-    margin-left: auto;
-}
-
-.toolbar-group {
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-    padding-right: 0.5rem;
-    border-right: 1px solid var(--border);
-}
-
-.toolbar-label {
-    color: var(--text-muted);
-    font-size: 0.8rem;
-    margin-right: 0.25rem;
-}
-
-.status {
-    min-width: 5rem;
-    color: var(--text-muted);
-    font-size: 0.8rem;
-}
-
-/* Song / Pattern view switch */
-.view-tabs {
-    display: flex;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    overflow: hidden;
-}
-
-.view-tab {
-    height: var(--control-height);
-    padding: 0 0.9rem;
-    background: var(--surface-2);
-    border: none;
-    color: var(--text-muted);
-    font: inherit;
-    font-weight: 600;
-    letter-spacing: 1px;
-    cursor: pointer;
-    white-space: nowrap;
-}
-
-.view-tab + .view-tab {
-    border-left: 1px solid var(--border);
-}
-
-.view-tab.active {
-    background: var(--accent);
-    color: var(--text);
-}
-
-.view-tab-label {
-    font-size: 0.75rem;
-    font-weight: 400;
-    letter-spacing: 0;
-    margin-left: 0.3rem;
-    opacity: 0.85;
-}
-
-/* Dropdown menus (FILE / ADD) */
+/* Dropdown menus (Add / File) */
 .menu {
     position: relative;
 }
@@ -270,16 +240,16 @@ body {
 .menu-panel {
     display: none;
     position: absolute;
-    top: calc(100% + 6px);
+    top: calc(100% + 8px);
     right: 0;
-    min-width: 170px;
-    padding: 0.3rem;
-    background: var(--surface-1);
-    border: 1px solid var(--border-strong);
+    min-width: 210px;
+    padding: 5px;
+    flex-direction: column;
+    background: var(--body);
+    border: 1px solid var(--key-border);
     border-radius: var(--radius);
     box-shadow: var(--shadow);
     z-index: 1000;
-    flex-direction: column;
 }
 
 .menu.open .menu-panel {
@@ -287,32 +257,33 @@ body {
 }
 
 .menu-item {
-    padding: 0.5rem 0.7rem;
+    padding: 9px 11px;
     background: none;
     border: none;
     border-radius: var(--radius-sm);
-    color: var(--text);
+    color: var(--ink);
     font: inherit;
     text-align: left;
     cursor: pointer;
 }
 
-.menu-item:hover {
-    background: var(--surface-3);
+.menu-item:hover,
+.menu-item:focus-visible {
+    background: var(--lane);
+    outline: none;
 }
 
 .menu-separator {
     height: 1px;
-    margin: 0.3rem 0.2rem;
-    background: var(--border);
+    margin: 5px 4px;
+    background: var(--line);
 }
 
 /* ------------------------------------------------------------ Canvas area */
 main {
-    flex: 1;
     position: relative;
+    min-height: 0;
     overflow: hidden;
-    background: var(--surface-2);
     cursor: crosshair;
 }
 
@@ -325,47 +296,119 @@ canvas {
     display: block;
 }
 
-/* Heads-up panels over the canvas */
-.hud {
-    position: absolute;
-    bottom: 16px;
-    padding: 0.5rem 1rem;
-    background: rgba(18, 20, 23, 0.85);
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    font-size: 0.8rem;
-    pointer-events: none;
+/* Bottom: gamepad legend printed on the body */
+.legend {
+    display: flex;
+    align-items: center;
+    gap: 22px;
+    height: 24px;
+    border-top: 1px solid var(--line);
+    font-size: 0.85em;
+    color: var(--graphite);
+    white-space: nowrap;
+    overflow: hidden;
 }
 
-.hud-left {
-    left: 16px;
-    color: var(--text-muted);
-}
-
-.hud-right {
-    right: 16px;
-    font-family: var(--font-mono);
-    font-size: 0.85rem;
+.legend b {
+    color: var(--ink);
+    font-weight: 600;
+    margin-right: 5px;
 }
 
 .toast {
     position: fixed;
-    bottom: 70px;
+    bottom: 44px;
     left: 50%;
     transform: translateX(-50%);
-    padding: 0.6rem 1.2rem;
-    background: var(--surface-3);
-    border: 1px solid var(--border-strong);
-    border-radius: 999px;
+    padding: 9px 18px;
+    background: var(--oled);
+    color: var(--oled-text);
+    border-radius: 5px;
     box-shadow: var(--shadow);
     z-index: 2000;
     pointer-events: none;
     opacity: 0;
-    transition: opacity 0.25s;
+    transition: opacity 0.2s;
 }
 
 .toast.show {
     opacity: 1;
+}
+
+/* ----------------------------------------------------- Buttons in panels */
+.btn {
+    height: 34px;
+    padding: 0 14px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border: 1px solid var(--key-border);
+    border-radius: var(--radius);
+    background: linear-gradient(180deg, var(--key-top) 0%, var(--key-bottom) 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75), 0 2px 0 var(--key-skirt);
+    color: var(--key-text);
+    font: inherit;
+    font-stretch: 100%;
+    font-weight: 500;
+    white-space: nowrap;
+    cursor: pointer;
+}
+
+.btn:active,
+.btn.active {
+    transform: translateY(2px);
+    background: linear-gradient(180deg, var(--key-pressed-top) 0%, var(--key-pressed-bottom) 100%);
+    box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.14);
+    color: var(--ink);
+}
+
+.btn.primary {
+    background: var(--ink);
+    border-color: var(--ink);
+    box-shadow: 0 2px 0 #000;
+    color: var(--body);
+}
+
+.btn.danger.active {
+    background: var(--ink);
+    border-color: var(--ink);
+    color: var(--body);
+}
+
+.btn.success.active {
+    background: var(--trig);
+    border-color: var(--trig);
+    color: #fff;
+}
+
+.btn.small {
+    height: 28px;
+    padding: 0 10px;
+    font-size: 0.9em;
+}
+
+.btn.icon.small {
+    width: 28px;
+    padding: 0;
+}
+
+.input {
+    width: 100%;
+    height: 36px;
+    padding: 0 10px;
+    background: var(--lane);
+    border: 1px solid var(--key-border);
+    border-radius: var(--radius-sm);
+    color: var(--ink);
+    font: inherit;
+    font-size: 16px;
+    user-select: text;
+}
+
+.input:focus {
+    outline: 2px solid var(--trig);
+    outline-offset: -1px;
 }
 
 /* ------------------------------------------------------------------ Modals */
@@ -373,7 +416,7 @@ canvas {
     display: none;
     position: fixed;
     inset: 0;
-    background: rgba(0, 0, 0, 0.6);
+    background: rgba(28, 28, 26, 0.35);
     z-index: 3000;
     justify-content: center;
     align-items: center;
@@ -384,14 +427,14 @@ canvas {
 }
 
 .modal-content {
-    width: 90%;
+    width: 92%;
     max-width: 500px;
-    max-height: 85vh;
+    max-height: 88vh;
     overflow-y: auto;
-    padding: 1.25rem;
-    background: var(--surface-1);
-    border: 1px solid var(--border-strong);
-    border-radius: var(--radius);
+    padding: 20px;
+    background: var(--body);
+    border: 1px solid var(--key-border);
+    border-radius: 8px;
     box-shadow: var(--shadow);
 }
 
@@ -400,54 +443,56 @@ canvas {
 }
 
 .modal-content h2 {
-    font-size: 1.1rem;
+    font-size: 1.25em;
     font-weight: 600;
-    margin-bottom: 1rem;
+    font-stretch: 80%;
+    margin-bottom: 14px;
 }
 
 .modal-message {
-    color: var(--text-muted);
-    margin-bottom: 0.75rem;
+    color: var(--graphite);
+    margin-bottom: 10px;
 }
 
 .modal-hint {
-    color: var(--text-dim);
-    font-size: 0.75rem;
-    margin-top: 0.75rem;
+    color: var(--graphite);
+    font-size: 0.8em;
+    margin-top: 12px;
 }
 
 .modal-actions {
     display: flex;
     justify-content: flex-end;
-    gap: 0.5rem;
-    margin-top: 1.25rem;
+    align-items: center;
+    gap: 8px;
+    margin-top: 18px;
 }
 
 /* Controller mapping */
 .mapping-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 0.5rem;
+    gap: 8px;
 }
 
 .mapping-item {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    padding: 0.4rem 0.6rem;
-    background: var(--surface-2);
-    border: 1px solid var(--border);
+    padding: 6px 10px;
+    background: var(--lane);
     border-radius: var(--radius-sm);
 }
 
 .mapping-item .btn.waiting {
-    background: var(--danger);
-    border-color: var(--danger);
+    background: var(--trig);
+    border-color: var(--trig);
+    color: #fff;
     animation: pulse 1s infinite;
 }
 
 @keyframes pulse {
-    50% { opacity: 0.5; }
+    50% { opacity: 0.55; }
 }
 
 /* Track list */
@@ -458,15 +503,15 @@ canvas {
 
 .track-list-table th,
 .track-list-table td {
-    padding: 0.5rem 0.6rem;
+    padding: 8px 9px;
     text-align: left;
-    border-bottom: 1px solid var(--border);
+    border-bottom: 1px solid var(--line);
 }
 
 .track-list-table th {
-    color: var(--text-muted);
+    color: var(--graphite);
     font-weight: 400;
-    font-size: 0.8rem;
+    font-size: 0.85em;
 }
 
 .track-row {
@@ -474,20 +519,12 @@ canvas {
 }
 
 .track-row:hover {
-    background: var(--surface-2);
+    background: var(--lane);
 }
 
 .track-row.active {
-    background: var(--surface-3);
-    box-shadow: inset 3px 0 0 var(--accent);
-}
-
-.track-swatch {
-    display: inline-block;
-    width: 10px;
-    height: 10px;
-    margin-right: 0.4rem;
-    border-radius: 2px;
+    background: var(--lane-cur);
+    box-shadow: inset 3px 0 0 var(--trig);
 }
 
 /* ------------------------------------------------------------ Tone editor */
@@ -499,8 +536,8 @@ canvas {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    gap: 1rem;
-    margin-bottom: 0.5rem;
+    gap: 16px;
+    margin-bottom: 8px;
 }
 
 .tone-header h2 {
@@ -510,75 +547,67 @@ canvas {
 .tone-track {
     display: flex;
     align-items: center;
-    gap: 0.5rem;
-    color: var(--text-muted);
-    font-size: 0.85rem;
-}
-
-.tone-track .track-swatch {
-    margin-right: 0;
-}
-
-.btn.icon.small {
-    width: 26px;
+    gap: 8px;
+    color: var(--graphite);
 }
 
 .tone-body {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: 1.25rem 2rem;
+    gap: 18px 30px;
 }
 
 .tone-section h3 {
-    margin-bottom: 0.5rem;
-    color: var(--text-muted);
-    font-size: 1rem;
-    font-weight: 300;
+    margin-bottom: 8px;
+    color: var(--graphite);
+    font-size: 1em;
+    font-weight: 400;
     text-align: center;
 }
 
 .tone-controls {
     display: flex;
     justify-content: center;
-    gap: 0.75rem;
+    gap: 12px;
 }
 
 .tone-control {
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 0.1rem;
-    padding: 0.35rem 0.5rem;
-    border: 1px solid transparent;
+    gap: 2px;
+    padding: 6px 8px;
+    border: 2px solid transparent;
     border-radius: var(--radius);
     cursor: ns-resize;
     touch-action: none;
 }
 
 .tone-control.focused {
-    border-color: var(--accent);
-    background: var(--surface-2);
+    border-color: var(--trig);
+    background: var(--lane);
 }
 
 .tone-label {
-    color: var(--text-muted);
-    font-size: 0.75rem;
+    color: var(--graphite);
+    font-size: 0.8em;
 }
 
 .tone-value {
-    font-family: var(--font-mono);
-    font-size: 0.8rem;
+    font-size: 0.9em;
+    font-variant-numeric: tabular-nums;
 }
 
 .tone-control.modified .tone-value,
 .tone-control.modified .tone-number {
-    color: var(--accent-hover);
+    color: var(--trig);
 }
 
 .tone-number {
     min-width: 2.5ch;
     font-size: 3rem;
     font-weight: 300;
+    font-stretch: 75%;
     line-height: 1.1;
     text-align: center;
 }
@@ -591,24 +620,24 @@ canvas {
 .knob-track,
 .knob-fill {
     fill: none;
-    stroke-width: 8;
+    stroke-width: 7;
     stroke-linecap: round;
 }
 
 .knob-track {
-    stroke: var(--border-strong);
+    stroke: var(--line);
 }
 
 .knob-fill {
-    stroke: var(--text-muted);
+    stroke: var(--ink);
 }
 
 .tone-control.focused .knob-fill {
-    stroke: var(--accent);
+    stroke: var(--trig);
 }
 
 .knob-pointer {
-    stroke: var(--text);
+    stroke: var(--ink);
     stroke-width: 3;
     stroke-linecap: round;
 }
@@ -621,27 +650,27 @@ canvas {
 }
 
 .env-axis {
-    stroke: var(--text-dim);
+    stroke: var(--graphite);
     stroke-width: 1.5;
 }
 
 .env-line {
     fill: none;
-    stroke: var(--text);
-    stroke-width: 1.5;
+    stroke: var(--ink);
+    stroke-width: 2;
     stroke-linejoin: round;
     vector-effect: non-scaling-stroke;
 }
 
 .env-highlight {
-    fill: var(--accent);
-    opacity: 0.3;
+    fill: var(--trig);
+    opacity: 0.18;
 }
 
 .env-controls {
     display: flex;
     justify-content: space-around;
-    margin-top: 0.25rem;
+    margin-top: 4px;
 }
 
 .env-control {
@@ -653,8 +682,24 @@ canvas {
     align-self: center;
 }
 
-@media (max-width: 640px) {
-    .tone-body {
-        grid-template-columns: 1fr;
-    }
+/* ------------------------------------------------------------- Small screens */
+@media (max-width: 1100px) {
+    .param.minor { display: none; }
+}
+
+@media (max-width: 900px) {
+    .oled-title { min-width: 0; }
+    .oled-sub { max-width: 9em; }
+    .k { width: 52px; }
+    .keys .sep { width: 4px; }
+    .tone-body { grid-template-columns: 1fr; }
+}
+
+@media (max-height: 500px) {
+    #app { gap: 6px; padding-top: 8px; }
+    .top { height: 46px; }
+    .k { height: 40px; padding: 7px 0 6px; }
+    .oled-title b { font-size: 1.3em; }
+    .param b { font-size: 1.25em; }
+    .legend { height: 20px; font-size: 0.8em; }
 }

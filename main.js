@@ -4,7 +4,7 @@ import { AudioManager, toneControllerMessages } from './audio.js';
 import { TransportManager } from './transport.js';
 import { Scheduler } from './scheduler.js';
 import { SongView } from './song_view.js';
-import { loadTheme, trackColor } from './theme.js';
+import { loadTheme } from './theme.js';
 import { ToneEditor } from './tone_editor.js';
 import {
     createSong, normalizeSong, SONG_VERSION, getPattern, patternsOfTrack, createPattern, addClip,
@@ -67,9 +67,9 @@ class App {
         document.getElementById('sfz-file-input').addEventListener('change', async (e) => {
             if (e.target.files.length > 0) {
                 this.audio.init();
-                document.getElementById('status-display').textContent = "Loading SFZ...";
+                this.showToast('Loading SFZ...');
                 const success = await this.audio.loadSFZ(e.target.files);
-                document.getElementById('status-display').textContent = success ? "SFZ Loaded" : "Load Failed";
+                this.showToast(success ? 'SFZ loaded' : 'Could not load the SFZ folder');
                 // Clear SF2 preset selector when loading SFZ
                 const presetSel = document.getElementById('preset-selector');
                 presetSel.innerHTML = '<option value="">-- SFZ Mode --</option>';
@@ -81,14 +81,14 @@ class App {
         // SF2 File Loading
         document.getElementById('sf2-file-input').addEventListener('change', async (e) => {
             if (e.target.files.length > 0) {
-                document.getElementById('status-display').textContent = "Loading SF2...";
+                this.showToast('Loading SoundFont...');
                 const success = await this.audio.loadSF2(e.target.files[0]);
                 if (success) {
-                    document.getElementById('status-display').textContent = "SF2 Loaded";
+                    this.showToast('SoundFont loaded');
                     this.populatePresetSelector();
                     this.validateTracksAgainstSF2();
                 } else {
-                    document.getElementById('status-display').textContent = "SF2 Load Failed";
+                    this.showToast('Could not load the SoundFont');
                 }
             }
             e.target.value = '';
@@ -332,31 +332,81 @@ class App {
     }
 
     updateViewUI() {
-        document.getElementById('tab-song').classList.toggle('active', this.view === 'song');
-        document.getElementById('tab-pattern').classList.toggle('active', this.view === 'pattern');
-        const label = document.getElementById('tab-pattern-label');
-        const pattern = this.currentPattern;
-        if (pattern) {
-            const bars = +(pattern.length / this.getPatternBarLength()).toFixed(2);
-            const trackName = this.songData.tracks[pattern.trackId].name;
-            label.textContent = `${trackName} · ${pattern.name} · ${bars} bar${bars === 1 ? '' : 's'}`;
+        document.getElementById('tab-song').classList.toggle('on', this.view === 'song');
+        document.getElementById('tab-pattern').classList.toggle('on', this.view === 'pattern');
+        // Instrument can be picked from the screen in the song view only
+        document.querySelector('.oled-title').classList.toggle('pick', this.view === 'song');
+        document.getElementById('preset-selector').style.pointerEvents = this.view === 'song' ? '' : 'none';
+
+        const hints = this.view === 'song'
+            ? [['A', 'Place or open'], ['B', 'Copy, hold to delete'], ['X', 'Play'], ['Y', 'Select'],
+                ['Start', 'Next track'], ['Start + Y', 'Tone'], ['Select', 'Hold for pattern']]
+            : [['A', 'Add note, hold to edit'], ['B', 'Copy, hold to delete'], ['X', 'Play'], ['Y', 'Select'],
+                ['L2', 'Grid'], ['Start + Y', 'Tone'], ['Select', 'Hold for song']];
+        document.getElementById('legend').innerHTML =
+            hints.map(([key, text]) => `<span><b>${key}</b>${text}</span>`).join('');
+        this.oledCache = null;
+    }
+
+    // Parameter screen at the top: what the cursor points at in the current view
+    updateOled() {
+        let name;
+        let sub;
+        let params;
+        const pan = (p) => Math.abs(p) < 0.05 ? 'C' : `${p < 0 ? 'L' : 'R'}${Math.round(Math.abs(p) * 100)}`;
+
+        if (this.view === 'song') {
+            const track = this.songData.tracks[this.currentTrackId];
+            const beat = this.transport.barToBeat(this.songState.cursorBar);
+            const clip = clipAt(this.songData, this.currentTrackId, beat);
+            const pattern = clip ? getPattern(this.songData, clip.patternId) : null;
+            const bar = this.isPlaying
+                ? Math.floor(this.transport.beatToBar(this.cardinalTime)) + 1
+                : this.songState.cursorBar + 1;
+            name = `<b>${escapeHtml(track.name)}</b>`;
+            sub = `T${track.id + 1}, ${escapeHtml(this.getInstrumentName(track))}`;
+            params = [
+                ['Bar', bar],
+                ['Volume', Math.round(track.volume * 100)],
+                ['Pan', pan(track.pan)],
+                ['Pattern', pattern ? escapeHtml(pattern.name) : '-'],
+                ['Tempo', this.transport.getBpmAt(beat), 'minor']
+            ];
+            if (this.songState.clipboard) params.push(['Clipboard', this.songState.clipboard.length, 'minor']);
         } else {
-            label.textContent = '';
+            const pattern = this.currentPattern;
+            if (!pattern) return;
+            const track = this.songData.tracks[pattern.trackId];
+            const input = this.input;
+            const note = input.getNoteAtCursor();
+            const bars = +(pattern.length / this.getPatternBarLength()).toFixed(2);
+            const duration = note ? note.duration : (input.lastNoteDuration || 4 / this.ui.gridDivisions);
+            name = `<b>${escapeHtml(track.name)}</b><i class="pipe"></i><b class="pat">${escapeHtml(pattern.name)}</b>`;
+            sub = `${bars} bar${bars === 1 ? '' : 's'}`;
+            params = [
+                ['Note', input.midiToNoteName(input.state.cursor.pitch)],
+                ['Velocity', Math.round(note ? (note.velocity || 100) : input.lastNoteVelocity)],
+                ['Length', beatsToNoteValue(duration)],
+                ['Grid', `1/${this.ui.gridDivisions}`],
+                ['Position', input.formatCursorPosition(), 'minor']
+            ];
         }
+
+        const html = params.map(([label, value, cls]) =>
+            `<div class="param ${cls || ''}"><span>${label}</span><b>${value}</b></div>`).join('');
+        const key = name + sub + html;
+        if (key === this.oledCache) return;
+        this.oledCache = key;
+        document.getElementById('oled-name').innerHTML = name;
+        document.getElementById('oled-sub').innerHTML = sub;
+        document.getElementById('oled-params').innerHTML = html;
     }
 
     // Shows the browser/OS output delay; large values usually mean Bluetooth audio or power saving
     showAudioLatency() {
         const ms = this.audio.getOutputLatencyMs();
         if (ms === null) return;
-        const status = document.getElementById('status-display');
-        status.textContent = `Audio latency: ${ms} ms`;
-        status.title = 'Delay added by the browser, OS and output device. Wired speakers/headphones are usually faster than Bluetooth.';
-    }
-
-    setCursorInfo(text) {
-        const el = document.getElementById('cursor-info');
-        if (el && el.textContent !== text) el.textContent = text;
+        this.showToast(`Audio output latency: ${ms} ms`);
     }
 
     saveState() {
@@ -491,6 +541,8 @@ class App {
             'load-sf2': () => document.getElementById('sf2-file-input').click(),
             'load-sfz': () => document.getElementById('sfz-file-input').click(),
             'controller-map': () => this.openMappingModal(),
+            'marker-prev': () => this.navigateToPrevMarker(),
+            'marker-next': () => this.navigateToNextMarker(),
             'add-marker': () => this.addMarker(),
             'add-bpm': () => this.addBpm(),
             'add-timesig': () => this.addTimeSig()
@@ -504,20 +556,7 @@ class App {
     }
 
     setupTransportButtons() {
-        document.getElementById('btn-play').addEventListener('click', () => this.togglePlayback(this.getPlayStartBeat()));
-        document.getElementById('btn-stop').addEventListener('click', () => {
-            if (this.isPlaying) this.togglePlayback(0);
-        });
-        document.getElementById('btn-marker-prev').addEventListener('click', () => this.navigateToPrevMarker());
-        document.getElementById('btn-marker-next').addEventListener('click', () => this.navigateToNextMarker());
         document.getElementById('btn-tone').addEventListener('click', () => this.toneEditor.open());
-    }
-
-    updateTransportUI() {
-        const playBtn = document.getElementById('btn-play');
-        if (playBtn.classList.contains('active') !== this.isPlaying) {
-            playBtn.classList.toggle('active', this.isPlaying);
-        }
     }
 
     addMarker() {
@@ -662,7 +701,7 @@ class App {
             const instrumentName = this.getInstrumentName(track);
 
             tr.innerHTML = `
-                <td><span class="track-swatch" style="background: ${trackColor(track.id)}"></span>${track.id + 1}</td>
+                <td>T${track.id + 1}</td>
                 <td>${track.name}</td>
                 <td>${instrumentName}</td>
                 <td>${Math.round(track.volume * 100)}%</td>
@@ -813,7 +852,7 @@ class App {
             }
         }
 
-        this.updateTransportUI();
+        this.updateOled();
         if (this.view === 'song') {
             this.songView.draw(this.cardinalTime);
         } else {
@@ -1030,3 +1069,18 @@ class App {
 window.addEventListener('DOMContentLoaded', () => {
     window.app = new App();
 });
+
+// Note length in beats as a note value, e.g. 1.5 -> "3/8", 4 -> "1"
+function beatsToNoteValue(beats) {
+    let num = Math.round(beats / 4 * 64);
+    let den = 64;
+    while (num % 2 === 0 && den > 1) {
+        num /= 2;
+        den /= 2;
+    }
+    return den === 1 ? String(num) : `${num}/${den}`;
+}
+
+function escapeHtml(text) {
+    return String(text).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}

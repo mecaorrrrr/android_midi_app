@@ -1,5 +1,4 @@
 import { DEFAULT_TONE } from './song.js';
-import { trackColor } from './theme.js';
 
 // Controls of the editor. Envelope/filter are relative to the preset (0 = preset as is).
 const PARAMS = {
@@ -255,9 +254,8 @@ export class ToneEditor {
         const track = this.app.songData.tracks[this.trackId];
         const tone = this.tone;
 
-        this.modal.querySelector('.tone-track-swatch').style.background = trackColor(this.trackId);
         this.modal.querySelector('.tone-track-name').textContent =
-            `${track.name} · ${this.app.getInstrumentName(track)}`;
+            `T${this.trackId + 1}  ${track.name}, ${this.app.getInstrumentName(track)}`;
 
         for (const el of this.modal.querySelectorAll('.tone-control')) {
             el.classList.toggle('focused', el.dataset.key === this.focusKey);

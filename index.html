@@ -7,64 +7,56 @@
     <title>Gamepad MIDI Sequencer</title>
     <link rel="stylesheet" href="style.css">
     <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#1a1d21">
+    <meta name="theme-color" content="#cfcfca">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="apple-touch-icon" href="icon-512.png">
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..700&display=swap" rel="stylesheet">
 </head>
 
 <body>
     <div id="app">
-        <header class="app-header">
-            <div class="brand">GamePad <span class="accent">MIDI Seq</span></div>
-
-            <nav class="view-tabs" title="SELECT long press: switch view">
-                <button id="tab-song" class="view-tab">SONG</button>
-                <button id="tab-pattern" class="view-tab">PATTERN <span id="tab-pattern-label" class="view-tab-label"></span></button>
-            </nav>
-
-            <div class="toolbar">
-                <div class="toolbar-group">
-                    <button id="btn-play" class="btn icon" title="Play / Stop (X)">▶</button>
-                    <button id="btn-stop" class="btn icon" title="Stop">■</button>
+        <header class="top">
+            <div class="oled">
+                <div class="oled-title">
+                    <span id="oled-name"></span>
+                    <span class="oled-sub" id="oled-sub"></span>
+                    <select id="preset-selector" disabled title="Instrument of the current track">
+                        <option value="">-- No SF2 --</option>
+                    </select>
                 </div>
+                <div class="oled-params" id="oled-params"></div>
+            </div>
 
-                <div class="toolbar-group">
-                    <span class="toolbar-label">Marker</span>
-                    <button id="btn-marker-prev" class="btn icon" title="Previous marker">◀</button>
-                    <button id="btn-marker-next" class="btn icon" title="Next marker">▶</button>
-                </div>
-
-                <select id="preset-selector" class="select" disabled title="Instrument of the current track">
-                    <option value="">-- No SF2 --</option>
-                </select>
-                <button id="btn-tone" class="btn" title="Tone Editor (START + Y)">TONE</button>
-
+            <div class="keys">
+                <button class="k" id="tab-song" title="SELECT long press: switch view"><i></i><span>Song</span></button>
+                <button class="k" id="tab-pattern" title="SELECT long press: switch view"><i></i><span>Pattern</span></button>
+                <span class="sep"></span>
+                <button class="k" id="btn-tone" title="Tone Editor (START + Y)"><i></i><span>Tone</span></button>
                 <div class="menu">
-                    <button class="btn" data-menu-toggle>ADD ▾</button>
+                    <button class="k" data-menu-toggle><i></i><span>Add</span></button>
                     <div class="menu-panel">
                         <button class="menu-item" data-action="add-marker">Marker</button>
-                        <button class="menu-item" data-action="add-bpm">BPM</button>
-                        <button class="menu-item" data-action="add-timesig">Time Signature</button>
+                        <button class="menu-item" data-action="add-bpm">Tempo change</button>
+                        <button class="menu-item" data-action="add-timesig">Time signature</button>
+                        <div class="menu-separator"></div>
+                        <button class="menu-item" data-action="marker-prev">Go to previous marker</button>
+                        <button class="menu-item" data-action="marker-next">Go to next marker</button>
                     </div>
                 </div>
-
                 <div class="menu">
-                    <button class="btn" data-menu-toggle>FILE ▾</button>
+                    <button class="k" data-menu-toggle><i></i><span>File</span></button>
                     <div class="menu-panel">
-                        <button class="menu-item" data-action="save">Save Project</button>
-                        <button class="menu-item" data-action="load">Load Project</button>
+                        <button class="menu-item" data-action="save">Save project</button>
+                        <button class="menu-item" data-action="load">Load project</button>
                         <button class="menu-item" data-action="export-midi">Export MIDI</button>
                         <div class="menu-separator"></div>
                         <button class="menu-item" data-action="load-sf2">Load SoundFont (SF2/SF3/DLS)</button>
-                        <button class="menu-item" data-action="load-sfz">Load SFZ Folder</button>
+                        <button class="menu-item" data-action="load-sfz">Load SFZ folder</button>
                         <div class="menu-separator"></div>
-                        <button class="menu-item" data-action="controller-map">Controller Map</button>
+                        <button class="menu-item" data-action="controller-map">Controller map</button>
                     </div>
                 </div>
-
-                <div id="status-display" class="status">Ready</div>
             </div>
 
             <input type="file" id="file-input-project" accept=".json" hidden>
@@ -76,11 +68,9 @@
             <div id="canvas-container">
                 <canvas id="piano-roll"></canvas>
             </div>
-            <div id="gamepad-status" class="hud hud-left">
-                Gamepad: <span id="gamepad-name">Disconnected</span>
-            </div>
-            <div id="cursor-info" class="hud hud-right"></div>
         </main>
+
+        <footer class="legend" id="legend"></footer>
     </div>
 
     <div id="toast" class="toast"></div>
@@ -106,7 +96,6 @@
                 <h2>Tone Editor</h2>
                 <div class="tone-track">
                     <button class="btn icon small" data-tone-prev title="Previous track (L1)">◀</button>
-                    <span class="track-swatch tone-track-swatch"></span>
                     <span class="tone-track-name"></span>
                     <button class="btn icon small" data-tone-next title="Next track (R1)">▶</button>
                 </div>

@@ -21,9 +21,9 @@ Android の Chrome での利用を主目的とし、PC ブラウザでも動作�
 
 | ファイル | 役割 |
 |---|---|
-| `index.html` | エントリ。ヘッダー（画面タブ、再生/マーカー、プリセット、ADD/FILE メニュー）、`#piano-roll` canvas、HUD、トースト、共通ダイアログ、各モーダル。スタイルは持たない |
-| `style.css` | 全スタイル。`:root` のデザイントークン（色・フォント・角丸・トラック色 `--track-1..8`）が**唯一の定義元** |
-| `theme.js` | `loadTheme()` で CSS のトークンを読み込み、Canvas 描画用に `theme` / `font()` / `withAlpha()` / `trackColor()` を提供 |
+| `index.html` | エントリ。上段（パラメーター画面 `.oled` ＋ ハードウェア風キー Song / Pattern / Tone / Add / File）、`#piano-roll` canvas、下段のゲームパッド凡例 `#legend`、トースト、共通ダイアログ、各モーダル。スタイルは持たない |
+| `style.css` | 全スタイル。`:root` のデザイントークンが**唯一の定義元**（Elektron 風: グレーの本体 `--body`、インク `--ink`、アクセントは赤 `--trig` の1色だけ、キーの質感 `--key-*`、LED `--led-*`） |
+| `theme.js` | `loadTheme()` で CSS のトークンを読み込み、Canvas 描画用に `theme` / `font()` / `withAlpha()` を提供 |
 | `main.js` | `App` クラス。状態（`songData`）、画面（`view`）切替、undo/redo、FILE/ADD メニューの**動的生成**、モーダル、保存/読込、MIDI 書き出し、メインループ |
 | `song.js` | ソングのデータモデルと純粋関数（パターン/クリップの作成、`clipAt`、`forEachSongNote`、`flattenTrack` など）。DOM 非依存なので Node でテストできる |
 | `song_view.js` | `SongView`。ソング画面（トラック×小節）の Canvas 描画とマウス操作。トラック色 `TRACK_COLORS` |
@@ -56,7 +56,9 @@ Android の Chrome での利用を主目的とし、PC ブラウザでも動作�
 - **レイテンシ**: ゲームパッドは `setInterval` で 4ms ごとに `input.update()`（描画は rAF の `loop()`）。即時発音（試聴）は時刻指定なしで synth に送る（時刻付きだとイベントキュー経由で 1 ブロック遅れる）。再生開始の先行時間は `Scheduler.startDelay`（0.02 秒）。ブラウザ/OS の出力遅延は `audio.getOutputLatencyMs()` で取得し、初回クリック後にヘッダーのステータスに表示する。
 - **停止**: spessasynth の予約済みイベントは取り消せないため、`AudioManager.stopAll()` は未来の noteOn と同時刻に noteOff を送って打ち消し、そのうえで `synth.stopAll()` を呼ぶ。
 - **SFZ / サイン波**: Web Audio のトラック別 Gain→StereoPanner→Master 経路。`scheduleEnvelope()` で DAHDSR（SFZ は `ampeg_*`）を適用し、ノート終了後に release 分だけ余韻が鳴る。
-- **GUI の決まり**: 色・フォントは `style.css` の `:root` トークンだけで定義する。Canvas では `theme.js` 経由で参照し、JS/HTML に色コードやインライン `style` を直接書かない（トラック色のスウォッチのようなデータ由来の値は例外）。ボタンは `.btn`（`.icon` / `.primary` / `.small` / `.active`）、メニューは `.menu` + `[data-menu-toggle]` + `.menu-item[data-action]`（処理は `main.js` の `setupMenus()`）、モーダルは `.modal` に `.open` を付け外しする。
+- **GUI の決まり**（デザインは `mockups/cycles.html` が基準）: 色・フォントは `style.css` の `:root` トークンだけで定義する。Canvas では `theme.js` 経由で参照し、JS/HTML に色コードやインライン `style` を直接書かない。アクセント色は赤 `--trig` だけ（カーソル・再生位置・ループ・点灯 LED）。上段のキーは `.k`（`<i>` が LED、`.on` で赤点灯）、パネル内のボタンは `.btn`（`.primary` / `.small` / `.active` = 押し込み）、メニューは `.menu` + `[data-menu-toggle]` + `.menu-item[data-action]`（処理は `main.js` の `setupMenus()`）、モーダルは `.modal` に `.open` を付け外しする。
+- **上段・下段**: パラメーター画面は `App.updateOled()` が毎フレーム状態から組み立てる（変化時のみ DOM 更新）。楽器選択は `#preset-selector`（透明な `<select>`）を SONG 画面のタイトル部分に重ねている。下段の凡例は `updateViewUI()` で画面ごとに差し替える。一時メッセージは `input.updateStatus()` / `app.showToast()` でトーストに出す。
+- **SONG 画面のトラックキー**: `song_view.js` の `drawTrackKey()` が Canvas に描く。LED は白 = 通常、消灯 = Mute、赤 = Solo。選択中のトラックはキーが押し込まれた表示（沈み込み＋側面の影なし）。
 - **ダイアログ**: `alert` / `prompt` / `confirm` は使わず `app.showDialog({ title, message, input, cancel })`（Promise）/ `app.showAlert()` / `app.showToast()` を使う。ダイアログ表示中はゲームパッドの A/B が OK/キャンセルになり、閉じた後は A/B を離すまでエディター側に入力を渡さない（`input.js` の `waitForRelease`）。
 
 ## 予定している改修（ユーザー要望）

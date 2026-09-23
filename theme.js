@@ -2,30 +2,34 @@
 // The single source of truth is the CSS custom properties in style.css (:root);
 // loadTheme() copies them here so canvas code and HTML use the same values.
 
-export const theme = {
-    trackColors: []
-};
+export const theme = {};
 
 const TOKENS = {
-    bg: '--bg',
-    surface1: '--surface-1',
-    surface2: '--surface-2',
-    surface3: '--surface-3',
-    border: '--border',
-    borderStrong: '--border-strong',
-    text: '--text',
-    textMuted: '--text-muted',
-    textDim: '--text-dim',
-    accent: '--accent',
-    selection: '--selection',
-    loop: '--loop',
-    marker: '--marker',
-    playhead: '--playhead',
-    danger: '--danger',
-    gridLine: '--grid-line',
-    gridBar: '--grid-bar',
+    body: '--body',
+    lane: '--lane',
+    laneCur: '--lane-cur',
+    laneCurBorder: '--lane-cur-border',
+    ink: '--ink',
+    graphite: '--graphite',
+    textOff: '--text-off',
+    line: '--line',
+    rowLine: '--row-line',
+    ghost: '--ghost',
+    trig: '--trig',
+    clipMuted: '--clip-muted',
+    clipNote: '--clip-note',
+    clipNoteMuted: '--clip-note-muted',
+    keyTop: '--key-top',
+    keyBottom: '--key-bottom',
+    keyPressedTop: '--key-pressed-top',
+    keyPressedBottom: '--key-pressed-bottom',
+    keyBorder: '--key-border',
+    keySkirt: '--key-skirt',
+    keyText: '--key-text',
     keyWhite: '--key-white',
-    keyBlack: '--key-black',
+    ledOn: '--led-on',
+    ledRim: '--led-rim',
+    ledOff: '--led-off',
     fontFamily: '--font-main'
 };
 
@@ -34,10 +38,9 @@ export function loadTheme() {
     for (const [key, name] of Object.entries(TOKENS)) {
         theme[key] = css.getPropertyValue(name).trim();
     }
-    theme.trackColors = Array.from({ length: 8 }, (_, i) => css.getPropertyValue(`--track-${i + 1}`).trim());
 }
 
-// Canvas font string using the app font, e.g. font(12, 'bold')
+// Canvas font string using the app font, e.g. font(12, '600')
 export function font(size, weight = '') {
     return `${weight ? weight + ' ' : ''}${size}px ${theme.fontFamily}`;
 }
@@ -46,8 +49,4 @@ export function font(size, weight = '') {
 export function withAlpha(hex, alpha) {
     const n = parseInt(hex.slice(1), 16);
     return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
-}
-
-export function trackColor(trackId) {
-    return theme.trackColors[trackId % theme.trackColors.length];
 }

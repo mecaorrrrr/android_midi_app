@@ -95,9 +95,9 @@ export class InputManager {
         }
     }
 
+    // Short feedback for gamepad actions (shown as a toast)
     updateStatus(msg) {
-        const el = document.getElementById('gamepad-name');
-        if (el) el.textContent = msg;
+        if (this.app.showToast) this.app.showToast(msg);
     }
 
     loadMapping() {
@@ -436,7 +436,6 @@ export class InputManager {
             this.wasYButtonHeld = yButtonHeld;
             this.wasStartButtonHeld = startButtonHeld;
             this.handleButtons(gp, dx, dy, startButtonHeld);
-            this.song.updateInfo();
             return;
         }
 
@@ -505,37 +504,17 @@ export class InputManager {
         // Edge detection for buttons
         this.handleButtons(gp, dx, dy, startButtonHeld);
 
-        // Update UI info
-        const cursorTime = this.state.cursor.time;
-        
-        // Format time as: Measure:Grid (based on current grid division)
-        const context = this.app.transport.getMeasureAt(cursorTime);
-        const measureNum = context.measure;
-        
-        // Use current grid division setting
+    }
+
+    // Cursor position as "measure:grid step", e.g. "2:3"
+    formatCursorPosition() {
+        const context = this.app.transport.getMeasureAt(this.state.cursor.time);
         const gridDivisions = this.app.ui.gridDivisions;
         const beatsPerMeasure = context.timeSig.num * (4 / context.timeSig.den);
-        const localBeat = context.beatInBar;
-        
-        // Convert to current grid division
-        // Example: 8-grid, localBeat=1.5 (2nd beat and a half)
-        // gridPosition = (1.5 * 8 / 4) + 1 = 4
-        let gridPosition = (localBeat * (gridDivisions / beatsPerMeasure)) + 1;
-        
-        // For 32-grid, show 0.5 increments (divide by 2 and add 0.5 offset)
-        // 32-grid position 8 -> 4.5, position 12 -> 6.5, etc.
-        let gridDisplay;
-        if (gridDivisions === 32) {
-            gridDisplay = gridPosition / 2 + 0.5;
-        } else {
-            gridDisplay = Math.round(gridPosition * 2) / 2;
-        }
-        
-        // Velocity of the note under the cursor (or the one used for new notes)
-        const noteAtCursor = this.getNoteAtCursor();
-        const displayVel = noteAtCursor ? (noteAtCursor.velocity || 100) : this.lastNoteVelocity;
-        const pitchName = this.midiToNoteName(this.state.cursor.pitch);
-        this.app.setCursorInfo(`T: ${measureNum}:${gridDisplay} | P: ${pitchName} | V: ${Math.round(displayVel)}`);
+        const gridPosition = (context.beatInBar * (gridDivisions / beatsPerMeasure)) + 1;
+        // 1/32 shows half steps of the 1/16 grid
+        const gridDisplay = gridDivisions === 32 ? gridPosition / 2 + 0.5 : Math.round(gridPosition * 2) / 2;
+        return `${context.measure}:${gridDisplay}`;
     }
 
     handleButtons(gp, dx, dy, suppressActions = false) {
