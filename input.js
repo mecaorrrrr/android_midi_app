@@ -1,6 +1,11 @@
+import { SongInput } from './song_input.js';
+
+const LONG_PRESS_MS = 500;
+
 export class InputManager {
     constructor(app) {
         this.app = app;
+        this.song = new SongInput(this);
         this.gamepads = {};
         this.activeGamepadIndex = null;
         this.lastL2StickState = { x: 0, y: 0 }; // L2+スティック用の状態記憶
@@ -8,6 +13,9 @@ export class InputManager {
         this.bButtonDownTime = 0;
         this.bButtonActionHandled = false;
         this.startPressTime = 0;
+        this.selectWasDown = false;
+        this.selectDownTime = 0;
+        this.selectHandled = false;
 
         this.lastNoteDuration = null;
         this.lastNoteVelocity = 100;
@@ -306,9 +314,7 @@ export class InputManager {
                 if (this.app.isTrackListOpen) {
                     this.app.toggleTrackListModal(false);
                 } else {
-                    this.app.currentTrackId = (this.app.currentTrackId + 1) % 8;
-                    this.updateStatus(`Track: ${this.app.currentTrackId + 1}`);
-                    if (this.app.updateTrackUI) this.app.updateTrackUI();
+                    this.app.selectTrack((this.app.currentTrackId + 1) % this.app.songData.tracks.length);
                 }
             }
             this.startComboUsed = false;
@@ -317,21 +323,39 @@ export class InputManager {
             if (l2Pressed) {
             // グリッドショートカット用：高いデッドゾーンでデジタル化
             let stickX = 0;
+            let stickY = 0;
             if (Math.abs(gp.axes[0]) > SHORTCUT_DEADZONE) {
                 stickX = gp.axes[0] > 0 ? 1 : -1;
             }
-            
+            if (Math.abs(gp.axes[1]) > SHORTCUT_DEADZONE) {
+                stickY = gp.axes[1] > 0 ? -1 : 1;
+            }
+
             // エッジ検出：前回と違う場合のみ反応
             const stickXChanged = stickX !== this.lastL2StickState.x;
-            
+            const stickYChanged = stickY !== this.lastL2StickState.y;
+            const right = (isPressed(map.RIGHT) && !this.lastButtonState[map.RIGHT]) || (stickXChanged && stickX > 0);
+            const left = (isPressed(map.LEFT) && !this.lastButtonState[map.LEFT]) || (stickXChanged && stickX < 0);
+            const up = (isPressed(map.UP) && !this.lastButtonState[map.UP]) || (stickYChanged && stickY > 0);
+            const down = (isPressed(map.DOWN) && !this.lastButtonState[map.DOWN]) || (stickYChanged && stickY < 0);
+
+            if (this.app.view === 'song') {
+                // Song view: L2 + Left/Right = zoom
+                if (right) this.song.zoom(1);
+                if (left) this.song.zoom(-1);
+            } else {
+            // Pattern view: L2 + Up/Down = pattern length
+            if (up) this.changePatternLength(1);
+            if (down) this.changePatternLength(-1);
+
             // Grid Shortcuts - スティックまたは十字キー
             let newDiv = this.app.ui.gridDivisions;
             let gridChanged = false;
 
-            if ((isPressed(map.RIGHT) && !this.lastButtonState[map.RIGHT]) || (stickXChanged && stickX > 0)) {
+            if (right) {
                 if (newDiv > 2) { newDiv /= 2; gridChanged = true; }
             }
-            if ((isPressed(map.LEFT) && !this.lastButtonState[map.LEFT]) || (stickXChanged && stickX < 0)) {
+            if (left) {
                 if (newDiv < 32) { newDiv *= 2; gridChanged = true; }
             }
 
@@ -343,15 +367,19 @@ export class InputManager {
                 this.state.cursor.time = Math.round(this.state.cursor.time / step) * step;
                 this.updateStatus(`Grid: 1/${newDiv}`);
             }
-            
+            }
+
             // L2+スティックの状態を保存
             this.lastL2StickState.x = stickX;
+            this.lastL2StickState.y = stickY;
             
-            // L2を押している間は通常の左右移動を無効化
+            // L2を押している間は通常の移動を無効化
             dx = 0;
+            dy = 0;
         } else {
             // L2を離した時、状態をリセット
             this.lastL2StickState.x = 0;
+            this.lastL2StickState.y = 0;
             
             // 通常のスティック操作（連続入力OK、低いデッドゾーン）
             // Normal D-Pad
@@ -365,6 +393,15 @@ export class InputManager {
         if (Math.abs(gp.axes[0]) > DEADZONE) dx = gp.axes[0] > 0 ? 1 : -1;
         if (Math.abs(gp.axes[1]) > DEADZONE) dy = gp.axes[1] > 0 ? -1 : 1;
     }
+
+        if (this.app.view === 'song') {
+            this.song.update(dx, dy, { a: aButtonHeld, y: yButtonHeld, r2: r2Pressed });
+            this.wasYButtonHeld = yButtonHeld;
+            this.wasStartButtonHeld = startButtonHeld;
+            this.handleButtons(gp, dx, dy, startButtonHeld);
+            this.song.updateInfo();
+            return;
+        }
 
         // Y Button: Selection Mode
         if (yButtonHeld) {
@@ -429,7 +466,7 @@ export class InputManager {
         // 2: West (X/Square) -> Play/Stop
 
         // Edge detection for buttons
-        this.handleButtons(gp, dx, dy, startButtonHeld, selectButtonHeld);
+        this.handleButtons(gp, dx, dy, startButtonHeld);
 
         // Update UI info
         const cursorTime = this.state.cursor.time;
@@ -457,17 +494,14 @@ export class InputManager {
             gridDisplay = Math.round(gridPosition * 2) / 2;
         }
         
-        document.getElementById('time-val').textContent = `${measureNum}:${gridDisplay}`;
-        document.getElementById('pitch-val').textContent = this.midiToNoteName(this.state.cursor.pitch);
-        
-        // Update Velocity Display
+        // Velocity of the note under the cursor (or the one used for new notes)
         const noteAtCursor = this.getNoteAtCursor();
         const displayVel = noteAtCursor ? (noteAtCursor.velocity || 100) : this.lastNoteVelocity;
-        const velEl = document.getElementById('vel-val');
-        if (velEl) velEl.textContent = Math.round(displayVel);
+        const pitchName = this.midiToNoteName(this.state.cursor.pitch);
+        this.app.setCursorInfo(`T: ${measureNum}:${gridDisplay} | P: ${pitchName} | V: ${Math.round(displayVel)}`);
     }
 
-    handleButtons(gp, dx, dy, suppressActions = false, selectButtonHeld = false) {
+    handleButtons(gp, dx, dy, suppressActions = false) {
         const map = this.buttonMap;
         // Helper for button down
         const isDown = (i) => gp.buttons[i] && gp.buttons[i].pressed;
@@ -475,7 +509,19 @@ export class InputManager {
         const now = Date.now();
 
         try {
+            this.handleSelectButton(isDown(map.SELECT) && !suppressActions, now);
+
             if (!suppressActions) {
+            // Button 2 (X/Square): Play from cursor position
+            if (isDown(map.X) && !wasDown(map.X)) {
+                this.playFromCursor();
+            }
+
+            if (this.app.view === 'song') {
+                this.song.handleButtons(isDown, wasDown, dx, dy, now);
+                return;
+            }
+
             // Button 0 (A/Cross): Paste or Place Note
             if (isDown(map.A) && !wasDown(map.A) && dx === 0 && dy === 0) {
                 if (!this.state.hasSelection) {
@@ -485,11 +531,6 @@ export class InputManager {
                         this.placeNote();
                     }
                 }
-            }
-
-            // Button 2 (X/Square): Play from cursor position
-            if (isDown(map.X) && !wasDown(map.X)) {
-                this.playFromCursor();
             }
 
             // Button 1 (B/Circle): Short=Copy/Clear, Long=Delete
@@ -521,47 +562,7 @@ export class InputManager {
                 }
             }
 
-            // Button 8 (Select): Set Loop / Toggle Loop
-            if (isDown(map.SELECT) && !wasDown(map.SELECT)) {
-                if (this.state.hasSelection && this.state.selectedNotes.length > 0) {
-                    // Set Loop to Selection
-                    let minTime = Infinity;
-                    let maxEnd = -Infinity;
-                    
-                    this.state.selectedNotes.forEach(n => {
-                        if (n.time < minTime) minTime = n.time;
-                        const end = n.time + (n.duration || 0);
-                        if (end > maxEnd) maxEnd = end;
-                    });
-
-                    if (minTime !== Infinity) {
-                        this.app.loopRegion = { start: minTime, end: maxEnd };
-                        this.app.isLooping = true;
-                        this.app.showToast(`Loop Set: ${minTime.toFixed(1)} - ${maxEnd.toFixed(1)}`);
-                        // Clear selection after setting loop
-                        this.clearSelection();
-                    }
-                } else {
-                    // Toggle Loop
-                    this.app.isLooping = !this.app.isLooping;
-                    this.app.showToast(this.app.isLooping ? "Loop ON" : "Loop OFF");
-                }
             }
-            }
-
-            // ... (Other button checks handled in update() or previous logic?) 
-            // Wait, previous logic for shortcuts was in handleInput/update?
-            // Need to make sure we don't double process or miss processing.
-            // The method snippet shown in previous view_file was handleButtons lines 242-272.
-            // The shortcut logic (B+Up etc) was usually in update() or handleInput() in my previous edits?
-            // Let's check where the shortcut logic is.
-            // Step 494 showed shortcuts in handleInput? No, it showed lines 110-140 which looked like inside handleInput or update.
-            // Step 437 showed handleButtons having basic A/B/X logic.
-
-            // If the shortcuts are in `update` or `handleInput` *before* `handleButtons` is called, 
-            // and `handleButtons` is just updating state...
-            // Actually, usually `handleButtons` is called by `update` or `handleInput`.
-            // Let's look at `update` or `handleInput` to see where `lastButtonState` is updated.
 
         } catch (e) {
             console.error("Error in handleButtons:", e);
@@ -570,6 +571,90 @@ export class InputManager {
             for (let i = 0; i < gp.buttons.length; i++) {
                 this.lastButtonState[i] = gp.buttons[i].pressed;
             }
+        }
+    }
+
+    // SELECT: short press = loop, long press = switch between song and pattern view
+    handleSelectButton(down, now) {
+        if (down && !this.selectWasDown) {
+            this.selectDownTime = now;
+            this.selectHandled = false;
+        } else if (down && !this.selectHandled && now - this.selectDownTime > LONG_PRESS_MS) {
+            this.selectHandled = true;
+            this.app.toggleView();
+        } else if (!down && this.selectWasDown && !this.selectHandled) {
+            if (this.app.view === 'song') {
+                this.song.handleLoopButton();
+            } else {
+                this.handlePatternLoopButton();
+            }
+        }
+        this.selectWasDown = down;
+    }
+
+    handlePatternLoopButton() {
+        if (this.state.hasSelection && this.state.selectedNotes.length > 0) {
+            // Set Loop to Selection
+            let minTime = Infinity;
+            let maxEnd = -Infinity;
+            this.state.selectedNotes.forEach(n => {
+                if (n.time < minTime) minTime = n.time;
+                const end = n.time + (n.duration || 0);
+                if (end > maxEnd) maxEnd = end;
+            });
+            this.app.loopRegion = { start: minTime, end: maxEnd };
+            this.app.isLooping = true;
+            this.app.showToast(`Loop Set: ${minTime.toFixed(1)} - ${maxEnd.toFixed(1)}`);
+            this.clearSelection();
+        } else if (this.app.loopRegion) {
+            this.app.isLooping = !this.app.isLooping;
+            this.app.showToast(this.app.isLooping ? "Loop ON" : "Loop OFF (whole pattern)");
+        } else {
+            this.app.showToast("Looping whole pattern");
+        }
+    }
+
+    // Called by the app whenever the view or the edited pattern changes
+    onViewChanged() {
+        this.clearSelection();
+        this.song.clearSelection();
+        this.repeatTimers = {};
+        const pattern = this.app.currentPattern;
+        if (this.app.view === 'pattern' && pattern) {
+            const step = 4 / this.app.ui.gridDivisions;
+            const maxTime = Math.max(0, pattern.length - step);
+            if (this.state.cursor.time > maxTime) this.state.cursor.time = maxTime;
+        }
+    }
+
+    // L2 + Up/Down in pattern view: change the pattern length by one bar
+    changePatternLength(dir) {
+        const pattern = this.app.currentPattern;
+        if (!pattern) return;
+        const bar = this.app.getPatternBarLength();
+        const newLength = pattern.length + dir * bar;
+        if (newLength < bar || newLength > 64 * bar) return;
+        this.app.saveState();
+        pattern.length = newLength;
+        this.onViewChanged();
+        this.app.updateViewUI();
+        this.updateStatus(`Pattern: ${newLength / bar} bars`);
+    }
+
+    // Calls fn on the first frame of a held direction, then repeats after delay
+    repeatAction(key, dir, fn, delay = this.REPEAT_DELAY, rate = this.REPEAT_RATE) {
+        if (dir === 0) {
+            delete this.repeatTimers[key];
+            return;
+        }
+        const now = Date.now();
+        const timer = this.repeatTimers[key];
+        if (!timer || timer.dir !== dir) {
+            fn();
+            this.repeatTimers[key] = { start: now, lastInfo: now, dir };
+        } else if (now - timer.start > delay && now - timer.lastInfo > rate) {
+            fn();
+            timer.lastInfo = now;
         }
     }
 
@@ -602,7 +687,8 @@ export class InputManager {
         if (!this.state.clipboard) return;
         this.app.saveState();
 
-        const track = this.app.songData.tracks[this.app.currentTrackId];
+        const pattern = this.app.currentPattern;
+        if (!pattern) return;
         const refTime = this.state.cursor.time;
 
         const newNotes = this.state.clipboard.map(n => ({
@@ -612,7 +698,7 @@ export class InputManager {
             velocity: n.velocity
         }));
 
-        track.notes.push(...newNotes);
+        pattern.notes.push(...newNotes);
         
         // Keep clipboard for continuous pasting
         this.updateStatus(`Pasted ${newNotes.length} notes`);
@@ -622,8 +708,9 @@ export class InputManager {
         if (!this.state.hasSelection) return;
         this.app.saveState();
 
-        const track = this.app.songData.tracks[this.app.currentTrackId];
-        track.notes = track.notes.filter(n => !this.state.selectedNotes.includes(n));
+        const pattern = this.app.currentPattern;
+        if (!pattern) return;
+        pattern.notes = pattern.notes.filter(n => !this.state.selectedNotes.includes(n));
         
         this.updateStatus(`Deleted ${this.state.selectedNotes.length} notes`);
         this.clearSelection();
@@ -634,21 +721,10 @@ export class InputManager {
             this.app.saveState();
             const { time, pitch } = this.state.cursor;
 
-            if (!this.app.songData || !this.app.songData.tracks) {
-                console.error("SongData or Tracks missing");
-                return;
-            }
-
-            const trackId = this.app.currentTrackId;
-            const track = this.app.songData.tracks[trackId];
-
-            if (!track) {
-                console.error(`Track ${trackId} not found`);
-                return;
-            }
-
-            if (!track.notes) track.notes = [];
-            const notes = track.notes;
+            const pattern = this.app.currentPattern;
+            if (!pattern) return;
+            const trackId = pattern.trackId;
+            const notes = pattern.notes;
 
             // Toggle: if exists, remove. if not, add.
             // Use epsilon for float comparison on time
@@ -688,11 +764,7 @@ export class InputManager {
         if (this.state.hasSelection && this.state.selectedNotes.length > 0) {
             targets = this.state.selectedNotes;
         } else {
-            const { time, pitch } = this.state.cursor;
-            const track = this.app.songData.tracks[this.app.currentTrackId];
-            const notes = track.notes;
-            const EPSILON = 0.001;
-            const note = notes.find(n => Math.abs(n.time - time) < EPSILON && n.pitch === pitch);
+            const note = this.getNoteAtCursor();
             if (note) targets.push(note);
         }
 
@@ -733,10 +805,7 @@ export class InputManager {
         if (this.state.hasSelection && this.state.selectedNotes.length > 0) {
             targets = this.state.selectedNotes;
         } else {
-            const { time, pitch } = this.state.cursor;
-            const track = this.app.songData.tracks[this.app.currentTrackId];
-            const EPSILON = 0.001;
-            const note = track.notes.find(n => Math.abs(n.time - time) < EPSILON && n.pitch === pitch);
+            const note = this.getNoteAtCursor();
             if (note) targets.push(note);
         }
 
@@ -788,9 +857,9 @@ export class InputManager {
         const maxPitch = Math.max(start.pitch, end.pitch);
 
         // Find all notes within the range
-        // Selection only works for current track for now
-        const track = this.app.songData.tracks[this.app.currentTrackId];
-        const notes = track.notes;
+        const pattern = this.app.currentPattern;
+        if (!pattern) return;
+        const notes = pattern.notes;
 
         this.state.selectedNotes = notes.filter(n =>
             n.time >= minTime - 0.001 && n.time <= maxTime + 0.001 &&
@@ -869,7 +938,7 @@ export class InputManager {
 
     playFromCursor() {
         // Toggle: if playing, stop. If stopped, play from cursor.
-        this.app.togglePlayback(this.state.cursor.time);
+        this.app.togglePlayback(this.app.getPlayStartBeat());
     }
 
     processMovement(axis, dir, unit = 'grid') {
@@ -930,6 +999,12 @@ export class InputManager {
         if (axis === 'x') {
             this.state.cursor.time += dir > 0 ? step : -step;
             if (this.state.cursor.time < 0) this.state.cursor.time = 0;
+            const pattern = this.app.currentPattern;
+            if (pattern) {
+                const gridStep = 4 / this.app.ui.gridDivisions;
+                const maxTime = Math.max(0, pattern.length - gridStep);
+                if (this.state.cursor.time > maxTime) this.state.cursor.time = maxTime;
+            }
             // Snap logic could be here
             this.state.cursor.time = Math.round(this.state.cursor.time * 1000) / 1000;
 
@@ -984,8 +1059,9 @@ export class InputManager {
 
     getNoteAtCursor() {
         const { time, pitch } = this.state.cursor;
-        const track = this.app.songData.tracks[this.app.currentTrackId];
+        const pattern = this.app.currentPattern;
+        if (!pattern) return undefined;
         const EPSILON = 0.001;
-        return track.notes.find(n => Math.abs(n.time - time) < EPSILON && n.pitch === pitch);
+        return pattern.notes.find(n => Math.abs(n.time - time) < EPSILON && n.pitch === pitch);
     }
 }

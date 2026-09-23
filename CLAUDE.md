@@ -5,7 +5,7 @@
 ## プロジェクト概要
 
 **GamePad MIDI Sequencer** — ゲームパッド（Gamepad API）で操作する、ブラウザ動作の MIDI シーケンサー PWA。
-Android の Chrome での利用を主目的とし、PC ブラウザでも動作する。8 トラックのピアノロール、SF2/SFZ サウンドフォント再生、JSON プロジェクト保存、MIDI エクスポートを備える。
+Android の Chrome での利用を主目的とし、PC ブラウザでも動作する。8 トラック。トラックごとのパターンをピアノロールで作り、ソング画面でクリップとして並べて曲にする。SF2/SFZ 再生、JSON プロジェクト保存、MIDI エクスポートを備える。
 操作仕様・ボタン配置・プロジェクト JSON 形式の詳細は `README.md` を参照。
 
 ## 実行・デプロイ
@@ -23,9 +23,12 @@ Android の Chrome での利用を主目的とし、PC ブラウザでも動作�
 |---|---|
 | `index.html` | エントリ。ヘッダー、`#piano-roll` canvas、各モーダル（コントローラー設定・トラック一覧）。モーダル用 CSS がインライン `<style>` にある |
 | `style.css` | 基本スタイル。CSS 変数（`--primary-accent` 等）を `:root` に定義 |
-| `main.js` | `App` クラス。状態（`songData`）、undo/redo、FILE/ADD メニューの**動的生成**、モーダル、保存/読込、MIDI 書き出し、メインループ |
-| `ui.js` | `UIManager`。Canvas 描画（グリッド、ノート、ゴーストノート、ルーラー、鍵盤、カーソル、選択範囲）。色はコード内にハードコード |
-| `input.js` | `InputManager`。Gamepad ポーリング、ボタンマッピング（localStorage `gamepad_mapping`）、カーソル移動、ノート配置/編集/選択/コピー、修飾キー操作。キーボード操作もここ |
+| `main.js` | `App` クラス。状態（`songData`）、画面（`view`）切替、undo/redo、FILE/ADD メニューの**動的生成**、モーダル、保存/読込、MIDI 書き出し、メインループ |
+| `song.js` | ソングのデータモデルと純粋関数（パターン/クリップの作成、`clipAt`、`forEachSongNote`、`flattenTrack` など）。DOM 非依存なので Node でテストできる |
+| `song_view.js` | `SongView`。ソング画面（トラック×小節）の Canvas 描画とマウス操作。トラック色 `TRACK_COLORS` |
+| `song_input.js` | `SongInput`。ソング画面のゲームパッド操作（`InputManager` から呼ばれる） |
+| `ui.js` | `UIManager`。パターン画面（ピアノロール）の Canvas 描画。Canvas のサイズ/DPI 管理もここ（`SongView` は `app.ui.width/height` を使う）。色はコード内にハードコード |
+| `input.js` | `InputManager`。Gamepad ポーリング、ボタンマッピング（localStorage `gamepad_mapping`）、共通ボタン（X/SELECT/START/L1/R1/L2）、ピアノロールの編集操作。ソング画面では `this.song`（`SongInput`）に委譲。**キーボード操作は未実装**（README の記載はあるがコードに無い） |
 | `audio.js` | `AudioManager`。SF2/SF3/DLS は spessasynth（AudioWorklet）で再生、SFZ は自前サンプラー、音源未ロード時はサイン波。全発音は `playNoteAt(trackId, pitch, vel, startTime, endTime)`（AudioContext 時刻）経由 |
 | `scheduler.js` | `Scheduler`。先読み（lookahead 0.12 秒）で `playNoteAt` に正確な時刻付きでノートを渡す。ループはセグメント（AudioContext 時刻↔拍の対応）を追加して処理 |
 | `vendor/spessasynth/` | spessasynth_lib + core を esbuild で 1 ファイルにバンドルしたものと AudioWorklet プロセッサ。再生成手順は同フォルダの README.md |
@@ -38,9 +41,14 @@ Android の Chrome での利用を主目的とし、PC ブラウザでも動作�
 ## アーキテクチャ上の要点
 
 - `App` が中心で、各マネージャーは `app` 参照を受け取って相互にアクセスする（`this.app.songData` など）。
-- 時間の単位は**拍（beat）**。ノートは `{ time, pitch, duration, velocity }`（time/duration は拍）。
-- トラック数は 8 固定で、`main.js` / `audio.js` の複数箇所に `8` がハードコードされている。
-- **再生**: `App.startPlayback()` / `stopPlayback()` / `togglePlayback()` が入口。`App.loop()`（requestAnimationFrame）は毎フレーム `scheduler.update()` を呼び、`cardinalTime`（プレイヘッド）は `scheduler.currentBeat()` から AudioContext の時刻を基準に求める。ミュート/ソロは予約時点で判定する。
+- 時間の単位は**拍（beat）**。ノートは `{ time, pitch, duration, velocity }`（time はパターン先頭からの拍）。
+- **データモデル（version 2）**: `songData = { version, nextId, tracks, patterns, clips }`。パターンは 1 トラックに属する（`trackId`）。クリップは `{ trackId, patternId, start }` で、同じパターンを複数のクリップが参照する（リンク）。旧形式（トラックが notes を直接持つ version 1）は読み込み非対応（ユーザー判断）。
+- **小節**: クリップは小節頭に置く。拍↔小節は `transport.barToBeat()` / `beatToBar()`（拍子変更対応）。パターン長の単位は曲頭の拍子の 1 小節（`getPatternBarLength()`）。
+- **画面**: `app.view` が `'song'` か `'pattern'`。切替は `toggleView()`（SELECT 長押し / ヘッダーのタブ）、`openPattern(id, contextStart)`、`showSong()`。`patternContextStart` はパターンを開いた曲中の位置で、ゴーストノート（`getGhostNotes()`）とマーカー表示に使う。
+- **ループ**: `app.loops.song` / `app.loops.pattern` を画面ごとに持ち、`app.loopRegion` / `app.isLooping` は現在の画面の値を返す getter/setter。パターン画面はサブループ未設定ならパターン全体をループ。
+- `songData` は undo/redo で JSON 丸ごと差し替わるため、ノートやパターンのオブジェクト参照を長く保持しない（ID で引き直す）。
+- トラック数は 8 固定（`song.js` の `TRACK_COUNT`、`audio.js` にも同値の定数）。
+- **再生**: `App.startPlayback()` / `stopPlayback()` / `togglePlayback()` が入口。`App.loop()`（requestAnimationFrame）は毎フレーム `scheduler.update()` を呼び、`cardinalTime`（プレイヘッド）は `scheduler.currentBeat()` から AudioContext の時刻を基準に求める。スケジューラーは `app.forEachPlaybackNote()`（ソング画面=全クリップ、パターン画面=編集中パターン）と `app.getPlaybackLoop()` を使うので画面に依存しない。ミュート/ソロは予約時点で判定する（パターン画面ではミュート中でも鳴らす）。ソング画面はループ無しなら曲末で自動停止。
 - **発音（SF2）**: トラック N = MIDI チャンネル N。音量/パンは CC7/CC10、音色は Bank Select (CC0/CC32) + Program Change、ドラムは `midiChannels[N].setDrums(true)`（プリセット一覧では bank 128 として扱う）。ADSR・フィルター・モジュレーター等はすべて spessasynth が SF2 仕様どおりに処理する。
 - **停止**: spessasynth の予約済みイベントは取り消せないため、`AudioManager.stopAll()` は未来の noteOn と同時刻に noteOff を送って打ち消し、そのうえで `synth.stopAll()` を呼ぶ。
 - **SFZ / サイン波**: Web Audio のトラック別 Gain→StereoPanner→Master 経路。`scheduleEnvelope()` で DAHDSR（SFZ は `ampeg_*`）を適用し、ノート終了後に release 分だけ余韻が鳴る。
@@ -49,12 +57,12 @@ Android の Chrome での利用を主目的とし、PC ブラウザでも動作�
 ## 予定している改修（ユーザー要望）
 
 1. ~~**再生エンジンの修正**~~: 完了。spessasynth に置き換え、先読みスケジューラーを導入した。
-2. **パターン/ソング構成**: 現状は各トラックにピアノロールが続くだけ。DAW のように画面を切り替え、作成したパターンを並べて一曲を構成できるようにする（パターン編集画面とソング/アレンジ画面）。プロジェクト JSON 形式の変更が伴うため、旧形式の読み込み互換を考慮する。
-3. **GUI の統一**: 分散しているスタイル（インライン style、index.html 内 CSS、canvas のハードコード色）を共通のデザイントークンに集約して見た目を統一する。
+2. ~~**パターン/ソング構成**~~: 完了。トラックごとのパターン、可変長（小節単位）、旧形式の互換なし。
+3. **GUI の統一**: 分散しているスタイル（インライン style、index.html 内 CSS、`ui.js` / `song_view.js` の canvas ハードコード色）を共通のデザイントークンに集約して見た目を統一する。
 
 ## 作業上の注意
 
 - ゲームパッド操作が主要な入力手段。UI を変更する際は、ゲームパッドだけで全機能に到達できることを維持する（マウス/タッチ操作は補助）。
-- 動作確認は手動（ブラウザ + ゲームパッド）。自動テストは無い。
+- 動作確認は手動（ブラウザ + ゲームパッド）。リポジトリ内に自動テストは無い。検証するときは、`song.js` / `transport.js` / `scheduler.js` を Node で直接 import して単体テストし、UI は puppeteer-core + ローカルの Chrome で `navigator.getGamepads` を偽のゲームパッドに差し替えて操作する（テスト用ファイルはリポジトリに置かない）。
 - git で管理している（ブランチ `main`）。`main` への push は GitHub Pages へのデプロイになるので、push はユーザーの指示があるときだけ行う。
 - 動作確認で音を出すときは、AudioContext の制約上ユーザー操作（クリック/ボタン）が必要。ヘッドレス Chrome で検証する場合は `--autoplay-policy=no-user-gesture-required` を付ける。

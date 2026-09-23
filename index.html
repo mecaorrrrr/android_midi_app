@@ -136,6 +136,10 @@
     <div id="app">
         <header class="glass-panel">
             <h1>GamePad <span class="accent">MIDI Seq</span></h1>
+            <nav class="view-tabs" title="SELECT long press: switch view">
+                <button id="tab-song" class="view-tab">SONG</button>
+                <button id="tab-pattern" class="view-tab">PATTERN <span id="tab-pattern-label" class="view-tab-label"></span></button>
+            </nav>
             <div class="controls">
                 <button id="btn-play" class="icon-btn">▶</button>
                 <button id="btn-stop" class="icon-btn">■</button>
@@ -169,9 +173,7 @@
             Gamepad: <span id="gamepad-name">Disconnected</span>
         </div>
 
-        <div id="cursor-info" class="glass-panel floating-info">
-            T: <span id="time-val">0</span> | P: <span id="pitch-val">C4</span> | V: <span id="vel-val">100</span>
-        </div>
+        <div id="cursor-info" class="glass-panel floating-info"></div>
     </div>
 
     <!-- Mapping Modal -->

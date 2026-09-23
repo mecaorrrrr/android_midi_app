@@ -78,8 +78,8 @@ export class UIManager {
 
     draw(inputState, playheadTime = -1) {
         // Get data
-        const currentTrack = this.app.songData.tracks[this.app.currentTrackId];
-        const notes = currentTrack ? currentTrack.notes : [];
+        const pattern = this.app.currentPattern;
+        const notes = pattern ? pattern.notes : [];
         const selectedNotes = inputState ? inputState.selectedNotes || [] : [];
         const selectionStart = inputState ? inputState.selectionStart : null;
 
@@ -141,15 +141,24 @@ export class UIManager {
         // Draw Grid
         this.drawGrid();
 
-        // Draw Ghost Notes (Other tracks)
-        const anySolo = this.app.songData.tracks.some(t => t.solo);
-        this.app.songData.tracks.forEach(track => {
-            if (track.id !== this.app.currentTrackId) {
-                if (anySolo && !track.solo) return;
-                if (track.muted) return;
-                this.drawGhostNotes(track.notes);
+        // Draw Ghost Notes (other tracks playing at the same place in the song)
+        this.drawGhostNotes(this.app.getGhostNotes());
+
+        // Shade the area after the end of the pattern
+        if (pattern) {
+            const endX = pattern.length * this.beatWidth - this.scrollX + this.pianoKeyWidth;
+            if (endX < this.width) {
+                const x = Math.max(endX, this.pianoKeyWidth);
+                this.ctx.fillStyle = 'rgba(0, 0, 0, 0.45)';
+                this.ctx.fillRect(x, 0, this.width - x, this.height);
+                this.ctx.strokeStyle = '#fdcb6e';
+                this.ctx.lineWidth = 2;
+                this.ctx.beginPath();
+                this.ctx.moveTo(endX, 0);
+                this.ctx.lineTo(endX, this.height);
+                this.ctx.stroke();
             }
-        });
+        }
 
         // Draw Selection Range (if selecting)
         if (selectionStart && inputState.cursor) {
@@ -444,7 +453,8 @@ export class UIManager {
             
             for (const marker of markers) {
                 // Draw marker to the right of measure number (offset by 25px)
-                const x = marker.beat * this.beatWidth - this.scrollX + this.pianoKeyWidth + 25;
+                const localBeat = marker.beat - this.app.patternContextStart;
+                const x = localBeat * this.beatWidth - this.scrollX + this.pianoKeyWidth + 25;
                 
                 // Only draw if visible
                 if (x >= this.pianoKeyWidth && x <= this.width) {

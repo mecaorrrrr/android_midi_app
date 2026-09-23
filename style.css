@@ -56,6 +56,37 @@ h1 {
     letter-spacing: 1px;
 }
 
+/* Song / Pattern view switch */
+.view-tabs {
+    display: flex;
+    gap: 0;
+    margin: 0 1rem;
+    border: 1px solid var(--panel-border);
+    border-radius: 8px;
+    overflow: hidden;
+}
+
+.view-tab {
+    border: none;
+    border-radius: 0;
+    padding: 0.4rem 0.9rem;
+    font-size: 0.85rem;
+    letter-spacing: 1px;
+    color: var(--text-muted);
+}
+
+.view-tab.active {
+    background: var(--primary-accent);
+    color: var(--text-main);
+}
+
+.view-tab-label {
+    font-size: 0.75rem;
+    opacity: 0.8;
+    letter-spacing: 0;
+    margin-left: 0.3rem;
+}
+
 .accent {
     color: var(--primary-accent);
     font-weight: 600;

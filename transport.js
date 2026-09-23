@@ -59,6 +59,43 @@ export class TransportManager {
         return pos + remaining * bpm / 60;
     }
 
+    // Beat at which the given 0-based bar starts (bar may be fractional)
+    barToBeat(bar) {
+        let barCount = 0;
+        for (let i = 0; i < this.timeSigMap.length; i++) {
+            const ts = this.timeSigMap[i];
+            const next = this.timeSigMap[i + 1];
+            const barLen = ts.num * (4 / ts.den);
+            const barsInSection = next ? (next.beat - ts.beat) / barLen : Infinity;
+            if (bar < barCount + barsInSection) {
+                return ts.beat + (bar - barCount) * barLen;
+            }
+            barCount += barsInSection;
+        }
+        return 0;
+    }
+
+    // 0-based (fractional) bar position of a beat; inverse of barToBeat
+    beatToBar(beat) {
+        let barCount = 0;
+        for (let i = 0; i < this.timeSigMap.length; i++) {
+            const ts = this.timeSigMap[i];
+            const next = this.timeSigMap[i + 1];
+            const barLen = ts.num * (4 / ts.den);
+            if (!next || beat < next.beat) {
+                return barCount + (beat - ts.beat) / barLen;
+            }
+            barCount += (next.beat - ts.beat) / barLen;
+        }
+        return 0;
+    }
+
+    // Length in beats of one bar at the song start (used as the pattern length unit)
+    getBaseBarLength() {
+        const ts = this.timeSigMap[0] || { num: 4, den: 4 };
+        return ts.num * (4 / ts.den);
+    }
+
     getTimeSigAt(beat) {
         for (let i = this.timeSigMap.length - 1; i >= 0; i--) {
             if (this.timeSigMap[i].beat <= beat) {

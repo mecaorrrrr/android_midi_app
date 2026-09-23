@@ -1,4 +1,4 @@
-const CACHE_NAME = 'midi-seq-pro-v2';
+const CACHE_NAME = 'midi-seq-pro-v3';
 const ASSETS = [
     './',
     './index.html',
@@ -9,6 +9,9 @@ const ASSETS = [
     './input.js',
     './transport.js',
     './scheduler.js',
+    './song.js',
+    './song_view.js',
+    './song_input.js',
     './vendor/spessasynth/spessasynth_lib.min.js',
     './vendor/spessasynth/spessasynth_processor.min.js',
     './midi_encoder.js',
@@ -33,10 +36,20 @@ self.addEventListener('activate', (event) => {
     );
 });
 
+// Network first (so updates show up on reload), cache as the offline fallback
 self.addEventListener('fetch', (event) => {
+    const request = event.request;
+    if (request.method !== 'GET' || new URL(request.url).origin !== self.location.origin) return;
+
     event.respondWith(
-        caches.match(event.request).then((response) => {
-            return response || fetch(event.request);
-        })
+        fetch(request)
+            .then((response) => {
+                if (response.ok) {
+                    const copy = response.clone();
+                    caches.open(CACHE_NAME).then((cache) => cache.put(request, copy));
+                }
+                return response;
+            })
+            .catch(() => caches.match(request))
     );
 });

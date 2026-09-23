@@ -47,7 +47,7 @@ export class Scheduler {
         // Bounded so a zero-length loop can never spin forever
         for (let guard = 0; guard < 64; guard++) {
             const seg = this.segments[this.segments.length - 1];
-            const region = this.app.isLooping ? this.app.loopRegion : null;
+            const region = this.app.getPlaybackLoop();
             const loopEnd = region && region.end > region.start ? region.end : Infinity;
 
             const horizonBeat = transport.beatAfter(seg.beat, horizon - seg.ctxTime);
@@ -74,18 +74,12 @@ export class Scheduler {
 
     scheduleRange(fromBeat, toBeat, seg, loopEnd) {
         const transport = this.app.transport;
-        const tracks = this.app.songData.tracks;
-        const anySolo = tracks.some(t => t.solo);
         const toCtxTime = (beat) => seg.ctxTime + transport.secondsBetween(seg.beat, beat);
 
-        for (const track of tracks) {
-            if (track.muted || (anySolo && !track.solo)) continue;
-            for (const note of track.notes) {
-                if (note.time < fromBeat || note.time >= toBeat) continue;
-                const velocity = note.velocity !== undefined ? note.velocity : 100;
-                const endBeat = Math.min(note.time + note.duration, loopEnd);
-                this.app.audio.playNoteAt(track.id, note.pitch, velocity, toCtxTime(note.time), toCtxTime(endBeat));
-            }
-        }
+        this.app.forEachPlaybackNote(fromBeat, toBeat, (trackId, time, note) => {
+            const velocity = note.velocity !== undefined ? note.velocity : 100;
+            const endBeat = Math.min(time + note.duration, loopEnd);
+            this.app.audio.playNoteAt(trackId, note.pitch, velocity, toCtxTime(time), toCtxTime(endBeat));
+        });
     }
 }

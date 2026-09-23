@@ -3,24 +3,29 @@ import { InputManager } from './input.js';
 import { AudioManager } from './audio.js';
 import { TransportManager } from './transport.js';
 import { Scheduler } from './scheduler.js';
+import { SongView } from './song_view.js';
+import {
+    createSong, SONG_VERSION, getPattern, patternsOfTrack, createPattern, addClip,
+    clipAt, forEachSongNote, flattenTrack, songEnd
+} from './song.js';
+
+const DEFAULT_PATTERN_BARS = 4;
 
 console.log("Initializing Android MIDI App...");
 
 class App {
     constructor() {
-        this.songData = {
-            tracks: Array.from({ length: 8 }, (_, i) => ({
-                id: i,
-                name: `Track ${i + 1}`,
-                notes: [],
-                volume: 0.8,
-                pan: 0.0,
-                muted: false,
-                solo: false,
-                program: 0,
-                bank: 0,
-                presetIndex: 0
-            }))
+        this.songData = createSong();
+
+        // Views: 'song' (arrangement) or 'pattern' (piano roll of one pattern)
+        this.view = 'pattern';
+        this.currentPatternId = null;
+        this.patternContextStart = 0; // Song beat the edited pattern is viewed at (for ghost notes)
+        this.lastPatternByTrack = {};
+        this.songState = { cursorBar: 0, selection: null, selectionStart: null, clipboard: null };
+        this.loops = {
+            song: { region: null, enabled: false },
+            pattern: { region: null, enabled: false } // pattern-local; the whole pattern loops when disabled
         };
         this.undoStack = [];
         this.redoStack = [];
@@ -30,6 +35,7 @@ class App {
         this.transport = new TransportManager(this);
         this.scheduler = new Scheduler(this);
         this.ui = new UIManager(this);
+        this.songView = new SongView(this);
         this.audio = new AudioManager();
         this.input = new InputManager(this);
 
@@ -111,11 +117,212 @@ class App {
         this.playbackStartTime = 0;
         this.isPlaying = false;
         this.bpm = 120;
-        this.loopRegion = null; // { start: 0, end: 4 }
-        this.isLooping = false;
+
+        this.setupViewTabs();
+        this.startNewSong();
 
         this.loop = this.loop.bind(this);
         requestAnimationFrame(this.loop);
+    }
+
+    // ------------------------------------------------------------ Song / views
+
+    get currentPattern() {
+        return getPattern(this.songData, this.currentPatternId);
+    }
+
+    // Loop settings of the current view (the piano roll ruler and SELECT button use these)
+    get loopRegion() { return this.loops[this.view].region; }
+    set loopRegion(region) { this.loops[this.view].region = region; }
+    get isLooping() { return this.loops[this.view].enabled; }
+    set isLooping(enabled) { this.loops[this.view].enabled = enabled; }
+
+    getPatternBarLength() {
+        return this.transport.getBaseBarLength();
+    }
+
+    createEmptyPattern(trackId) {
+        return createPattern(this.songData, trackId, DEFAULT_PATTERN_BARS * this.getPatternBarLength());
+    }
+
+    startNewSong() {
+        this.songData = createSong();
+        const pattern = this.createEmptyPattern(0);
+        addClip(this.songData, 0, pattern.id, 0);
+        this.openPattern(pattern.id, 0);
+    }
+
+    // Called after undo/redo replaced songData with a copy
+    afterSongDataReplaced() {
+        this.input.clearSelection();
+        this.input.song.clearSelection();
+        if (this.view === 'pattern' && !this.currentPattern) {
+            this.showSong();
+        }
+        this.updateViewUI();
+    }
+
+    // Loop range used by the scheduler, in the current view's timeline
+    getPlaybackLoop() {
+        const loop = this.loops[this.view];
+        if (this.view === 'pattern') {
+            const pattern = this.currentPattern;
+            if (!pattern) return null;
+            if (loop.enabled && loop.region) return loop.region;
+            return { start: 0, end: pattern.length };
+        }
+        return loop.enabled && loop.region ? loop.region : null;
+    }
+
+    forEachPlaybackNote(fromBeat, toBeat, fn) {
+        if (this.view === 'song') {
+            forEachSongNote(this.songData, fromBeat, toBeat, fn);
+            return;
+        }
+        // Pattern view plays the edited pattern even if its track is muted
+        const pattern = this.currentPattern;
+        if (!pattern) return;
+        for (const note of pattern.notes) {
+            if (note.time >= fromBeat && note.time < toBeat && note.time < pattern.length) {
+                fn(pattern.trackId, note.time, note);
+            }
+        }
+    }
+
+    // Notes of other tracks that sound while the edited pattern plays in the song (pattern-local times)
+    getGhostNotes() {
+        const pattern = this.currentPattern;
+        if (!pattern) return [];
+        const offset = this.patternContextStart;
+        const ghosts = [];
+        forEachSongNote(this.songData, offset, offset + pattern.length, (trackId, time, note) => {
+            if (trackId !== pattern.trackId) {
+                ghosts.push({ time: time - offset, pitch: note.pitch, duration: note.duration });
+            }
+        });
+        return ghosts;
+    }
+
+    // Song-timeline beat under the cursor of the current view
+    getSongCursorBeat() {
+        if (this.view === 'song') return this.transport.barToBeat(this.songState.cursorBar);
+        return this.patternContextStart + this.input.state.cursor.time;
+    }
+
+    setSongCursorBeat(beat) {
+        if (this.view === 'song') {
+            this.songState.cursorBar = Math.floor(this.transport.beatToBar(beat) + 1e-6);
+        } else {
+            const pattern = this.currentPattern;
+            const local = beat - this.patternContextStart;
+            if (pattern && local >= 0 && local < pattern.length) this.input.state.cursor.time = local;
+        }
+    }
+
+    // Beat where playback starts in the current view
+    getPlayStartBeat() {
+        if (this.view === 'song') return this.transport.barToBeat(this.songState.cursorBar);
+        return this.input.state.cursor.time;
+    }
+
+    openPattern(patternId, contextStart = null) {
+        const pattern = getPattern(this.songData, patternId);
+        if (!pattern) return;
+        if (this.isPlaying) this.stopPlayback();
+
+        if (this.currentPatternId !== patternId) {
+            this.loops.pattern = { region: null, enabled: false };
+        }
+        if (contextStart === null) {
+            // View the pattern at its placement closest to the current context
+            const clips = this.songData.clips.filter(c => c.patternId === patternId);
+            if (clips.length > 0) {
+                const distance = (c) => Math.abs(c.start - this.patternContextStart);
+                clips.sort((a, b) => distance(a) - distance(b));
+                contextStart = clips[0].start;
+            } else {
+                contextStart = this.patternContextStart;
+            }
+        }
+
+        this.currentPatternId = pattern.id;
+        this.patternContextStart = contextStart;
+        this.lastPatternByTrack[pattern.trackId] = pattern.id;
+        this.currentTrackId = pattern.trackId;
+        this.view = 'pattern';
+        this.input.onViewChanged();
+        this.updateTrackUI();
+        this.updateViewUI();
+    }
+
+    showSong() {
+        if (this.isPlaying) this.stopPlayback();
+        this.view = 'song';
+        this.input.onViewChanged();
+        this.updateViewUI();
+    }
+
+    // SELECT long press / header tabs
+    toggleView() {
+        if (this.view === 'pattern') {
+            this.showSong();
+            return;
+        }
+        const beat = this.transport.barToBeat(this.songState.cursorBar);
+        const clip = clipAt(this.songData, this.currentTrackId, beat);
+        if (clip) {
+            this.openPattern(clip.patternId, clip.start);
+        } else {
+            this.openPattern(this.getOrCreateTrackPattern(this.currentTrackId).id, beat);
+        }
+    }
+
+    // Pattern last edited on the track, or its newest pattern, or a new empty one
+    getOrCreateTrackPattern(trackId) {
+        const last = getPattern(this.songData, this.lastPatternByTrack[trackId]);
+        if (last) return last;
+        const patterns = patternsOfTrack(this.songData, trackId);
+        if (patterns.length > 0) return patterns[patterns.length - 1];
+        this.saveState();
+        return this.createEmptyPattern(trackId);
+    }
+
+    selectTrack(trackId) {
+        this.currentTrackId = trackId;
+        this.input.updateStatus(`Track: ${trackId + 1}`);
+        if (this.view === 'pattern') {
+            this.openPattern(this.getOrCreateTrackPattern(trackId).id);
+        } else {
+            this.updateTrackUI();
+        }
+    }
+
+    setupViewTabs() {
+        document.getElementById('tab-song').addEventListener('click', () => {
+            if (this.view !== 'song') this.toggleView();
+        });
+        document.getElementById('tab-pattern').addEventListener('click', () => {
+            if (this.view !== 'pattern') this.toggleView();
+        });
+    }
+
+    updateViewUI() {
+        document.getElementById('tab-song').classList.toggle('active', this.view === 'song');
+        document.getElementById('tab-pattern').classList.toggle('active', this.view === 'pattern');
+        const label = document.getElementById('tab-pattern-label');
+        const pattern = this.currentPattern;
+        if (pattern) {
+            const bars = +(pattern.length / this.getPatternBarLength()).toFixed(2);
+            const trackName = this.songData.tracks[pattern.trackId].name;
+            label.textContent = `${trackName} · ${pattern.name} · ${bars} bar${bars === 1 ? '' : 's'}`;
+        } else {
+            label.textContent = '';
+        }
+    }
+
+    setCursorInfo(text) {
+        const el = document.getElementById('cursor-info');
+        if (el && el.textContent !== text) el.textContent = text;
     }
 
     saveState() {
@@ -142,7 +349,7 @@ class App {
 
         const prevState = this.undoStack.pop();
         this.songData = JSON.parse(prevState);
-        this.input.clearSelection(); // Clear selection to avoid invalid references
+        this.afterSongDataReplaced();
 
         this.showToast("Undo");
     }
@@ -157,7 +364,7 @@ class App {
 
         const nextState = this.redoStack.pop();
         this.songData = JSON.parse(nextState);
-        this.input.clearSelection();
+        this.afterSongDataReplaced();
 
         this.showToast("Redo");
     }
@@ -365,7 +572,7 @@ class App {
     }
 
     addMarker() {
-        const cursorTime = this.input.state.cursor.time;
+        const cursorTime = this.getSongCursorBeat();
         const result = this.transport.addMarker(cursorTime);
         if (result.removed) {
             this.showToast(`Marker ${result.label} removed`);
@@ -375,7 +582,7 @@ class App {
     }
 
     addBpm() {
-        const cursorTime = this.input.state.cursor.time;
+        const cursorTime = this.getSongCursorBeat();
         const currentBpm = this.transport.getBpmAt(cursorTime);
         const targetTime = Math.round(cursorTime * 100) / 100;
 
@@ -390,7 +597,7 @@ class App {
     }
 
     addTimeSig() {
-        const cursorTime = this.input.state.cursor.time;
+        const cursorTime = this.getSongCursorBeat();
         const context = this.transport.getMeasureAt(cursorTime);
         const currentTs = context.timeSig;
         const targetTime = Math.round(cursorTime * 100) / 100;
@@ -410,10 +617,10 @@ class App {
     }
 
     navigateToPrevMarker() {
-        const cursorTime = this.input.state.cursor.time;
+        const cursorTime = this.getSongCursorBeat();
         const prevMarker = this.transport.getPrevMarker(cursorTime);
         if (prevMarker) {
-            this.input.state.cursor.time = prevMarker.beat;
+            this.setSongCursorBeat(prevMarker.beat);
             this.showToast(`Jump to marker ${prevMarker.label}`);
         } else {
             this.showToast('No marker on the left');
@@ -421,10 +628,10 @@ class App {
     }
 
     navigateToNextMarker() {
-        const cursorTime = this.input.state.cursor.time;
+        const cursorTime = this.getSongCursorBeat();
         const nextMarker = this.transport.getNextMarker(cursorTime);
         if (nextMarker) {
-            this.input.state.cursor.time = nextMarker.beat;
+            this.setSongCursorBeat(nextMarker.beat);
             this.showToast(`Jump to marker ${nextMarker.label}`);
         } else {
             this.showToast('No marker on the right');
@@ -519,21 +726,7 @@ class App {
                 tr.classList.add('active');
             }
 
-            // Determine Instrument Name
-            let instrumentName = "Sine Wave";
-            if (this.audio.hasSoundBank()) {
-                const presets = this.audio.getPresets();
-                let p = null;
-                // Try to find by index first, then bank/prog
-                if (track.presetIndex !== undefined && presets[track.presetIndex]) {
-                    p = presets[track.presetIndex];
-                } else {
-                    p = presets.find(pr => pr.bank === track.bank && pr.preset === track.program);
-                }
-                if (p) instrumentName = p.name;
-            } else if (this.audio.mode === 'sfz') {
-                instrumentName = "SFZ Sample";
-            }
+            const instrumentName = this.getInstrumentName(track);
 
             tr.innerHTML = `
                 <td>${track.id + 1}</td>
@@ -546,9 +739,7 @@ class App {
             `;
 
             tr.addEventListener('click', () => {
-                this.currentTrackId = track.id;
-                this.input.updateStatus(`Track: ${track.id + 1}`);
-                this.updateTrackUI();
+                this.selectTrack(track.id);
                 this.updateTrackListUI();
             });
 
@@ -566,6 +757,21 @@ class App {
 
             tbody.appendChild(tr);
         });
+    }
+
+    getInstrumentName(track) {
+        if (this.audio.hasSoundBank()) {
+            const presets = this.audio.getPresets();
+            // Try to find by index first, then bank/prog
+            let p = presets[track.presetIndex];
+            if (!p || p.bank !== track.bank || p.preset !== track.program) {
+                p = presets.find(pr => pr.bank === track.bank && pr.preset === track.program) || p;
+            }
+            if (p) return p.name;
+        } else if (this.audio.mode === 'sfz') {
+            return "SFZ Sample";
+        }
+        return "Sine Wave";
     }
 
     validateTracksAgainstSF2() {
@@ -640,8 +846,9 @@ class App {
     startPlayback(fromBeat) {
         this.audio.init();
         this.audio.resume();
-        if (this.isLooping && this.loopRegion) {
-            fromBeat = this.loopRegion.start;
+        const loop = this.getPlaybackLoop();
+        if (loop && (fromBeat < loop.start || fromBeat >= loop.end)) {
+            fromBeat = loop.start;
         }
         this.cardinalTime = fromBeat;
         this.playbackStartTime = fromBeat;
@@ -661,16 +868,25 @@ class App {
         if (this.isPlaying) {
             this.scheduler.update();
             this.cardinalTime = this.scheduler.currentBeat();
+            // Stop at the end of the song (plus one beat for release tails)
+            if (this.view === 'song' && !this.getPlaybackLoop()
+                && this.cardinalTime > songEnd(this.songData) + 1) {
+                this.stopPlayback();
+            }
         }
 
-        this.ui.draw(this.input.state, this.cardinalTime);
+        if (this.view === 'song') {
+            this.songView.draw(this.cardinalTime);
+        } else {
+            this.ui.draw(this.input.state, this.cardinalTime);
+        }
 
         requestAnimationFrame(this.loop);
     }
 
     saveProject() {
         const project = {
-            version: 1,
+            version: SONG_VERSION,
             date: new Date().toISOString(),
             songData: this.songData,
             transport: {
@@ -695,13 +911,22 @@ class App {
         reader.onload = (e) => {
             try {
                 const project = JSON.parse(e.target.result);
-                if (project.version !== 1) {
-                    console.warn("Unknown project version");
+                if (project.version !== SONG_VERSION || !project.songData || !project.songData.patterns) {
+                    alert('This project file uses an old format and cannot be loaded.');
+                    return;
                 }
 
                 // Restore data
+                if (this.isPlaying) this.stopPlayback();
+                this.undoStack = [];
+                this.redoStack = [];
                 this.songData = project.songData;
                 this.currentTrackId = 0;
+                this.currentPatternId = null;
+                this.lastPatternByTrack = {};
+                this.loops.song = { region: null, enabled: false };
+                this.loops.pattern = { region: null, enabled: false };
+                this.songState.cursorBar = 0;
 
                 // Restore Transport
                 if (project.transport) {
@@ -728,13 +953,10 @@ class App {
                 });
 
                 // Reset State
-                if (this.isPlaying) this.stopPlayback();
                 this.cardinalTime = 0;
                 this.input.state.cursor.time = 0;
-
-                // Force UI Update
+                this.showSong();
                 this.updateTrackUI();
-                this.ui.draw(this.input.state, this.cardinalTime);
 
                 console.log("Project loaded");
                 alert("Project loaded successfully.");
@@ -793,8 +1015,8 @@ class App {
             const pan = Math.round((trackData.pan + 1) * 63.5);
             encoder.addEvent(track, 0, [0xB0 | ch, 10, pan]);
 
-            // Bank Select (CC 0 for MSB, CC 32 for LSB if needed)
-            if (trackData.bank !== undefined && trackData.bank !== 0) {
+            // Bank Select (CC 0 for MSB). Bank 128 (drum kits) is not a valid MSB value.
+            if (trackData.bank !== undefined && trackData.bank !== 0 && trackData.bank < 128) {
                 encoder.addEvent(track, 0, [0xB0 | ch, 0, trackData.bank]);
             }
 
@@ -803,12 +1025,13 @@ class App {
             encoder.addEvent(track, 0, [0xC0 | ch, prog]);
 
             // Notes
-            for (const note of trackData.notes) {
+            for (const note of flattenTrack(this.songData, trackData.id)) {
                 const onTick = Math.round(note.time * PPQ);
                 const offTick = Math.round((note.time + note.duration) * PPQ);
+                const velocity = note.velocity !== undefined ? note.velocity : 100;
 
                 // Note On
-                encoder.addEvent(track, onTick, [0x90 | ch, note.pitch, 100]);
+                encoder.addEvent(track, onTick, [0x90 | ch, note.pitch, velocity]);
                 // Note Off
                 encoder.addEvent(track, offTick, [0x80 | ch, note.pitch, 0]);
             }
