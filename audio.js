@@ -1,31 +1,48 @@
+import { WorkletSynthesizer } from './vendor/spessasynth/spessasynth_lib.min.js';
+
+const TRACK_COUNT = 8;
+const PROCESSOR_URL = new URL('./vendor/spessasynth/spessasynth_processor.min.js', import.meta.url);
+
+// MIDI CC numbers
+const CC_BANK_MSB = 0;
+const CC_VOLUME = 7;
+const CC_PAN = 10;
+const CC_BANK_LSB = 32;
+
+// Envelope used by the sine-wave fallback (seconds / 0..1 level)
+const OSC_ENVELOPE = { delay: 0, attack: 0.005, hold: 0, decay: 0.3, sustain: 0.6, release: 0.15 };
+
+/**
+ * Audio engine.
+ * - SF2/SF3/DLS: rendered by spessasynth (AudioWorklet), which implements the full
+ *   SoundFont spec (volume/modulation envelopes, filters, LFOs, modulators, effects).
+ *   Track N is played on MIDI channel N.
+ * - SFZ: small built-in sampler (Web Audio) with ampeg_* envelope support.
+ * - No sound bank: sine-wave fallback.
+ * All note playback goes through playNoteAt() with AudioContext timestamps.
+ */
 export class AudioManager {
     constructor() {
         this.ctx = null;
         this.masterGain = null;
-        this.trackChannels = []; // Array of { gain: GainNode, panner: StereoPannerNode }
+        this.trackChannels = []; // Web Audio path (SFZ / oscillator): { gain, panner }
 
-        this.regions = []; // SFZ Regions
-        this.buffers = {}; // Filename -> AudioBuffer
+        this.synth = null;        // spessasynth WorkletSynthesizer
+        this.synthReady = null;   // Promise resolved once the worklet is running
+        this.presets = [];        // Normalized preset list of the loaded sound bank
+        this.pendingNoteOns = []; // Future noteOns queued in the synth (to cancel on stop)
 
-        // SF2 specific
-        this.sf2Data = null;
-        this.sf2Buffers = {}; // Sample index -> AudioBuffer
-        // Track instruments: each track can have different preset
-        this.trackInstruments = Array.from({ length: 8 }, () => ({ 
-            bank: 0, 
-            program: 0, 
-            presetIndex: 0  // Direct preset index for SF2
+        this.regions = []; // SFZ regions
+        this.buffers = {}; // SFZ sample path -> AudioBuffer
+        this.voices = new Set(); // Active Web Audio voices: { source, gain }
+
+        this.trackMix = Array.from({ length: TRACK_COUNT }, () => ({ volume: 0.8, pan: 0 }));
+        this.trackInstruments = Array.from({ length: TRACK_COUNT }, () => ({
+            bank: 0,
+            program: 0,
+            presetIndex: 0
         }));
         this.mode = 'oscillator'; // 'oscillator', 'sfz', 'sf2'
-    }
-
-    setTrackInstrument(trackId, bank, program, presetIndex = -1) {
-        if (trackId >= 0 && trackId < 8) {
-            this.trackInstruments[trackId] = { bank, program, presetIndex };
-            console.log(`AudioManager: Track ${trackId} instrument set to Bank:${bank} Prog:${program} PresetIndex:${presetIndex}`);
-        } else {
-            console.warn("AudioManager: Invalid trackId for instrument set:", trackId);
-        }
     }
 
     init() {
@@ -34,34 +51,35 @@ export class AudioManager {
         const AudioContext = window.AudioContext || window.webkitAudioContext;
         this.ctx = new AudioContext();
         this.masterGain = this.ctx.createGain();
-        this.masterGain.gain.value = 0.5;
+        this.masterGain.gain.value = 0.8;
         this.masterGain.connect(this.ctx.destination);
 
-        // Create 8 Track Channels
-        for (let i = 0; i < 8; i++) {
+        for (let i = 0; i < TRACK_COUNT; i++) {
             const gain = this.ctx.createGain();
             const panner = this.ctx.createStereoPanner();
-
-            // Chain: Gain -> Panner -> Master
             gain.connect(panner);
             panner.connect(this.masterGain);
-
+            gain.gain.value = this.trackMix[i].volume;
+            panner.pan.value = this.trackMix[i].pan;
             this.trackChannels.push({ gain, panner });
         }
 
-        console.log("AudioManager initialized");
+        this.synthReady = this.initSynth().catch(e => {
+            console.error('AudioManager: failed to start spessasynth', e);
+            this.synth = null;
+        });
+
+        console.log('AudioManager initialized');
     }
 
-    setTrackVolume(trackId, volume) {
-        if (this.trackChannels[trackId]) {
-            this.trackChannels[trackId].gain.gain.setValueAtTime(volume, this.ctx.currentTime);
-        }
-    }
-
-    setTrackPan(trackId, pan) {
-        if (this.trackChannels[trackId]) {
-            this.trackChannels[trackId].panner.pan.setValueAtTime(pan, this.ctx.currentTime);
-        }
+    async initSynth() {
+        await this.ctx.audioWorklet.addModule(PROCESSOR_URL);
+        const synth = new WorkletSynthesizer(this.ctx);
+        synth.connect(this.masterGain);
+        await synth.isReady;
+        synth.setLogLevel(false, true, false);
+        this.synth = synth;
+        for (let i = 0; i < TRACK_COUNT; i++) this.applyTrackMix(i);
     }
 
     resume() {
@@ -70,6 +88,203 @@ export class AudioManager {
         }
     }
 
+    // ---------------------------------------------------------------- Mixer
+
+    setTrackVolume(trackId, volume) {
+        if (!this.trackMix[trackId]) return;
+        this.trackMix[trackId].volume = volume;
+        this.applyTrackMix(trackId);
+    }
+
+    setTrackPan(trackId, pan) {
+        if (!this.trackMix[trackId]) return;
+        this.trackMix[trackId].pan = pan;
+        this.applyTrackMix(trackId);
+    }
+
+    applyTrackMix(trackId) {
+        const { volume, pan } = this.trackMix[trackId];
+        const channel = this.trackChannels[trackId];
+        if (channel) {
+            channel.gain.gain.setValueAtTime(volume, this.ctx.currentTime);
+            channel.panner.pan.setValueAtTime(pan, this.ctx.currentTime);
+        }
+        if (this.synth) {
+            this.synth.controllerChange(trackId, CC_VOLUME, clamp7(Math.round(volume * 127)));
+            this.synth.controllerChange(trackId, CC_PAN, clamp7(Math.round((pan + 1) * 64)));
+        }
+    }
+
+    // ---------------------------------------------------------- Instruments
+
+    async loadSF2(file) {
+        this.init();
+        this.resume();
+        await this.synthReady;
+        if (!this.synth) return false;
+
+        try {
+            const buffer = await file.arrayBuffer();
+            const presetsChanged = new Promise(resolve => {
+                this.synth.eventHandler.addEvent('presetListChange', 'audio-manager-load', resolve);
+                setTimeout(resolve, 3000); // Fall back to synth.presetList if the event never fires
+            });
+            await this.synth.soundBankManager.addSoundBank(buffer, 'main');
+            await presetsChanged;
+            this.synth.eventHandler.removeEvent('presetListChange', 'audio-manager-load');
+
+            this.presets = this.synth.presetList.map((p, index) => {
+                const bank = p.isDrum ? 128 : p.bankMSB;
+                return {
+                    index,
+                    name: p.name,
+                    bank,
+                    bankLSB: p.bankLSB,
+                    preset: p.program,
+                    isDrum: p.isDrum,
+                    fullName: `${bank}:${p.program} ${p.name}`
+                };
+            });
+            if (this.presets.length === 0) return false;
+
+            console.log(`Loaded sound bank: ${this.presets.length} presets`);
+            this.mode = 'sf2';
+            for (let i = 0; i < TRACK_COUNT; i++) {
+                this.trackInstruments[i] = { bank: this.presets[0].bank, program: this.presets[0].preset, presetIndex: 0 };
+                this.applyInstrument(i);
+            }
+            return true;
+        } catch (e) {
+            console.error('Failed to load SF2:', e);
+            return false;
+        }
+    }
+
+    hasSoundBank() {
+        return this.mode === 'sf2' && this.presets.length > 0;
+    }
+
+    getPresets() {
+        return this.presets;
+    }
+
+    setTrackInstrument(trackId, bank, program, presetIndex = -1) {
+        if (trackId < 0 || trackId >= TRACK_COUNT) {
+            console.warn('AudioManager: Invalid trackId for instrument set:', trackId);
+            return;
+        }
+        this.trackInstruments[trackId] = { bank, program, presetIndex };
+        this.applyInstrument(trackId);
+    }
+
+    selectPreset(trackId, presetIndex) {
+        const preset = this.presets[presetIndex];
+        if (!preset) {
+            console.warn('Invalid preset index:', presetIndex);
+            return;
+        }
+        this.setTrackInstrument(trackId, preset.bank, preset.preset, presetIndex);
+    }
+
+    // Send bank select / program change for a track to the synth
+    applyInstrument(trackId) {
+        if (!this.synth || !this.hasSoundBank()) return;
+        const inst = this.trackInstruments[trackId];
+        let preset = this.presets[inst.presetIndex];
+        if (!preset || preset.bank !== inst.bank || preset.preset !== inst.program) {
+            preset = this.presets.find(p => p.bank === inst.bank && p.preset === inst.program) || preset || this.presets[0];
+        }
+
+        const channel = this.synth.midiChannels[trackId];
+        channel.setDrums(preset.isDrum);
+        if (!preset.isDrum) {
+            this.synth.controllerChange(trackId, CC_BANK_MSB, preset.bank);
+            this.synth.controllerChange(trackId, CC_BANK_LSB, preset.bankLSB);
+        }
+        this.synth.programChange(trackId, preset.preset);
+    }
+
+    // ------------------------------------------------------------- Playback
+
+    // Preview a note right now (duration in seconds)
+    playNote(midi, duration = 1.0, trackId = 0, velocity = 100) {
+        if (!this.ctx) return;
+        this.resume();
+        const now = this.ctx.currentTime;
+        this.playNoteAt(trackId, midi, velocity, now, now + duration);
+    }
+
+    // Play a note between two AudioContext timestamps
+    playNoteAt(trackId, midi, velocity, startTime, endTime) {
+        if (!this.ctx) return;
+        velocity = Math.max(1, clamp7(Math.round(velocity)));
+
+        if (this.hasSoundBank() && this.synth) {
+            const now = this.ctx.currentTime;
+            this.synth.noteOn(trackId, midi, velocity, { time: startTime });
+            this.synth.noteOff(trackId, midi, { time: endTime });
+            this.pendingNoteOns = this.pendingNoteOns.filter(n => n.time > now);
+            if (startTime > now) this.pendingNoteOns.push({ trackId, midi, time: startTime });
+        } else if (this.mode === 'sfz' && this.regions.length > 0) {
+            this.playSFZNote(trackId, midi, velocity, startTime, endTime);
+        } else {
+            this.playOscillator(trackId, midi, velocity, startTime, endTime);
+        }
+    }
+
+    // Silence everything, including notes already queued for the future
+    stopAll() {
+        if (!this.ctx) return;
+        const now = this.ctx.currentTime;
+
+        if (this.synth) {
+            // Queued synth events cannot be removed, so pair each future noteOn with a noteOff at the same time
+            for (const n of this.pendingNoteOns) {
+                if (n.time > now) this.synth.noteOff(n.trackId, n.midi, { time: n.time });
+            }
+            this.pendingNoteOns = [];
+            this.synth.stopAll();
+        }
+
+        for (const voice of this.voices) {
+            const g = voice.gain.gain;
+            g.cancelScheduledValues(now);
+            g.setValueAtTime(g.value, now);
+            g.linearRampToValueAtTime(0, now + 0.03);
+            try { voice.source.stop(now + 0.05); } catch (e) { /* already stopped */ }
+        }
+        this.voices.clear();
+    }
+
+    playOscillator(trackId, midi, velocity, startTime, endTime) {
+        const osc = this.ctx.createOscillator();
+        osc.type = 'sine';
+        osc.frequency.value = midiToFreq(midi);
+        const peak = (velocity / 127) * 0.4;
+        this.startVoice(osc, trackId, peak, OSC_ENVELOPE, startTime, endTime);
+    }
+
+    // Connect a source through an ADSR gain to the track and schedule start/stop
+    startVoice(source, trackId, peak, env, startTime, endTime) {
+        const gain = this.ctx.createGain();
+        const stopTime = scheduleEnvelope(gain.gain, peak, env, startTime, endTime);
+
+        source.connect(gain);
+        const channel = this.trackChannels[trackId];
+        gain.connect(channel ? channel.gain : this.masterGain);
+
+        const voice = { source, gain };
+        this.voices.add(voice);
+        source.onended = () => {
+            this.voices.delete(voice);
+            gain.disconnect();
+        };
+        source.start(startTime);
+        source.stop(stopTime + 0.02);
+    }
+
+    // ------------------------------------------------------------------ SFZ
+
     async loadSFZ(fileList) {
         this.init();
         this.resume();
@@ -77,9 +292,8 @@ export class AudioManager {
         this.regions = [];
         this.buffers = {};
 
-        // 1. Find .sfz file
         let sfzFile = null;
-        const assetFiles = {}; // name -> File
+        const assetFiles = {}; // lowercase file name -> File
 
         for (const f of fileList) {
             if (f.name.toLowerCase().endsWith('.sfz')) {
@@ -90,445 +304,204 @@ export class AudioManager {
         }
 
         if (!sfzFile) {
-            console.error("No .sfz file found in selection");
+            console.error('No .sfz file found in selection');
             return false;
         }
 
-        console.log("Parsing SFZ:", sfzFile.name);
-        const text = await sfzFile.text();
-        this.parseSFZ(text);
-
+        console.log('Parsing SFZ:', sfzFile.name);
+        this.parseSFZ(await sfzFile.text());
         console.log(`Parsed ${this.regions.length} regions. Loading samples...`);
 
-        // 2. Load samples referenced in regions
-        const padName = (path) => path.split(/[\\/]/).pop().toLowerCase();
-
+        const baseName = (path) => path.split(/[\\/]/).pop().toLowerCase();
         for (const region of this.regions) {
             if (!region.sample) continue;
-            const simpleName = padName(region.sample);
-
-            if (!this.buffers[region.sample] && assetFiles[simpleName]) {
-                try {
-                    const arrayBuffer = await assetFiles[simpleName].arrayBuffer();
-                    const audioBuffer = await this.ctx.decodeAudioData(arrayBuffer);
-                    this.buffers[region.sample] = audioBuffer;
-                } catch (e) {
-                    console.error("Failed to load sample:", simpleName, e);
-                }
+            const file = assetFiles[baseName(region.sample)];
+            if (this.buffers[region.sample] || !file) continue;
+            try {
+                this.buffers[region.sample] = await this.ctx.decodeAudioData(await file.arrayBuffer());
+            } catch (e) {
+                console.error('Failed to load sample:', region.sample, e);
             }
         }
 
-        console.log("Loaded samples:", Object.keys(this.buffers).length);
+        console.log('Loaded samples:', Object.keys(this.buffers).length);
         this.mode = 'sfz';
+        this.presets = [];
         return true;
     }
 
+    // Opcodes inherit <global> -> <master> -> <group> -> <region>
     parseSFZ(text) {
-        const lines = text.split(/\r?\n/);
-        let currentRegion = {};
-        let groupParams = {};
+        text = text.replace(/\/\/[^\n]*/g, '');
+        const scopes = { global: {}, master: {}, group: {}, control: {} };
+        let current = null;
 
-        for (let line of lines) {
-            line = line.trim();
-            if (!line || line.startsWith('//')) continue;
+        const parts = text.split(/<(\w+)>/);
+        // parts: [before, header1, body1, header2, body2, ...]
+        for (let i = 1; i < parts.length; i += 2) {
+            const header = parts[i].toLowerCase();
+            const body = parts[i + 1] || '';
 
-            if (line.includes('<group>')) {
-                groupParams = {};
-                this.parseOpCodes(line, groupParams);
-                continue;
-            }
-
-            if (line.includes('<region>')) {
-                currentRegion = { ...groupParams };
-                this.parseOpCodes(line, currentRegion);
-                this.regions.push(currentRegion);
-                continue;
-            }
-
-            if (this.regions.length > 0) {
-                this.parseOpCodes(line, this.regions[this.regions.length - 1]);
-            }
-        }
-    }
-
-    parseOpCodes(line, targetObj) {
-        // Handle sample= specially (can have spaces in path)
-        const sampleMatch = line.match(/sample=([^\r\n]+?)(?=\s+[a-zA-Z_]+=|\s*$)/);
-        if (sampleMatch) {
-            targetObj.sample = sampleMatch[1].trim();
-        }
-
-        // Match other opcode=value pairs
-        const regex = /([a-zA-Z0-9_]+)=([^=\s]+)/g;
-        let match;
-        while ((match = regex.exec(line)) !== null) {
-            const key = match[1];
-            if (key === 'sample') continue; // Already handled
-
-            let val = match[2];
-
-            // Convert note names to MIDI numbers for key-related opcodes
-            if (['key', 'lokey', 'hikey', 'pitch_keycenter'].includes(key)) {
-                val = this.noteNameToMidi(val);
-            } else if (!isNaN(val)) {
-                val = parseFloat(val);
-            }
-
-            targetObj[key] = val;
-        }
-    }
-
-    noteNameToMidi(str) {
-        // Handle both numbers and note names like C4, D#5, Eb3
-        if (!isNaN(str)) return parseInt(str);
-
-        const match = str.match(/^([A-Ga-g])([#b]?)(-?\d+)$/);
-        if (!match) return parseInt(str) || 60;
-
-        const noteMap = { 'C': 0, 'D': 2, 'E': 4, 'F': 5, 'G': 7, 'A': 9, 'B': 11 };
-        const note = match[1].toUpperCase();
-        const accidental = match[2];
-        const octave = parseInt(match[3]);
-
-        let midi = noteMap[note] + (octave + 1) * 12;
-        if (accidental === '#') midi += 1;
-        if (accidental === 'b') midi -= 1;
-
-        return midi;
-    }
-
-    // SF2 Methods
-    async loadSF2(file) {
-        this.init();
-        this.resume();
-
-        try {
-            const { SF2Parser } = await import('./sf2parser.js');
-            const arrayBuffer = await file.arrayBuffer();
-            const parser = new SF2Parser(arrayBuffer);
-            this.sf2Data = parser.parse();
-
-            console.log(`Parsed SF2: ${this.sf2Data.presets.length} presets, ${this.sf2Data.samples.length} samples`);
-
-            // Pre-decode samples to AudioBuffers
-            this.sf2Buffers = {};
-            for (let i = 0; i < this.sf2Data.samples.length; i++) {
-                const sample = this.sf2Data.samples[i];
-                if (sample.sampleType === 1 || sample.sampleType === 0) { // Mono samples
-                    const buffer = this.createAudioBufferFromSF2Sample(sample);
-                    if (buffer) {
-                        this.sf2Buffers[i] = buffer;
-                    }
+            if (header === 'region') {
+                current = { ...scopes.global, ...scopes.master, ...scopes.group };
+                this.parseOpCodes(body, current);
+                if (current.sample && scopes.control.default_path) {
+                    current.sample = scopes.control.default_path + current.sample;
                 }
+                this.regions.push(current);
+                continue;
             }
 
-            console.log(`Decoded ${Object.keys(this.sf2Buffers).length} samples`);
-            this.mode = 'sf2';
-            
-            // Initialize all tracks to first preset
-            for (let i = 0; i < 8; i++) {
-                this.trackInstruments[i] = {
-                    bank: this.sf2Data.presets[0]?.bank || 0,
-                    program: this.sf2Data.presets[0]?.preset || 0,
-                    presetIndex: 0
-                };
+            if (header in scopes) {
+                scopes[header] = {};
+                if (header === 'global') { scopes.master = {}; scopes.group = {}; }
+                if (header === 'master') scopes.group = {};
+                this.parseOpCodes(body, scopes[header]);
             }
-            
-            return true;
-        } catch (e) {
-            console.error("Failed to load SF2:", e);
-            return false;
         }
     }
 
-    createAudioBufferFromSF2Sample(sample) {
-        if (!this.sf2Data.sampleData) return null;
+    parseOpCodes(text, targetObj) {
+        // Values may contain spaces (e.g. sample paths), so a value runs until the next "opcode="
+        const regex = /([a-zA-Z0-9_]+)=(.*?)(?=\s+[a-zA-Z0-9_]+=|\s*$)/gs;
+        let match;
+        while ((match = regex.exec(text.trim())) !== null) {
+            const key = match[1];
+            let val = match[2].trim();
 
-        const start = sample.start;
-        const end = sample.end;
-        const length = end - start;
-
-        if (length <= 0) return null;
-
-        const buffer = this.ctx.createBuffer(1, length, sample.sampleRate);
-        const channelData = buffer.getChannelData(0);
-
-        // Convert Int16 to Float32
-        for (let i = 0; i < length; i++) {
-            channelData[i] = this.sf2Data.sampleData[start + i] / 32768.0;
-        }
-
-        return buffer;
-    }
-
-    getPresets() {
-        if (!this.sf2Data) return [];
-        return this.sf2Data.presets.map((p, index) => ({
-            index: index,
-            name: p.name,
-            bank: p.bank,
-            preset: p.preset,
-            fullName: `${p.bank}:${p.preset} ${p.name}`
-        }));
-    }
-
-    // Set preset by index for a specific track
-    selectPreset(trackId, presetIndex) {
-        if (!this.sf2Data || presetIndex < 0 || presetIndex >= this.sf2Data.presets.length) {
-            console.warn("Invalid preset index:", presetIndex);
-            return;
-        }
-        
-        const preset = this.sf2Data.presets[presetIndex];
-        this.setTrackInstrument(trackId, preset.bank, preset.preset, presetIndex);
-        console.log(`Track ${trackId} preset changed to: ${preset.name} (Index: ${presetIndex})`);
-    }
-
-    playNote(midi, duration = 1.0, trackId = 0, velocity = 100) {
-        if (!this.ctx) return;
-
-        if (this.mode === 'sf2' && this.sf2Data) {
-            this.playSF2Note(midi, duration, trackId, velocity);
-        } else if (this.mode === 'sfz' && this.regions.length > 0) {
-            this.playSFZNote(midi, duration, trackId, velocity);
-        } else {
-            this.playOscillator(midi, duration, trackId, velocity);
+            if (key === 'sample' || key === 'default_path') {
+                targetObj[key] = val.replace(/\\/g, '/');
+            } else if (['key', 'lokey', 'hikey', 'pitch_keycenter'].includes(key)) {
+                targetObj[key] = noteNameToMidi(val);
+            } else if (val !== '' && !isNaN(val)) {
+                targetObj[key] = parseFloat(val);
+            } else {
+                targetObj[key] = val;
+            }
         }
     }
 
-    playOscillator(midi, duration = 0.2, trackId = 0, velocity = 100) {
-        if (!this.ctx) this.init();
-        this.resume();
-
-        const channel = this.trackChannels[trackId];
-        const dest = channel ? channel.gain : this.masterGain;
-
-        const osc = this.ctx.createOscillator();
-        const envelope = this.ctx.createGain();
-
-        osc.type = 'sine';
-        osc.frequency.setValueAtTime(this.midiToFreq(midi), this.ctx.currentTime);
-
-        const gainVal = (velocity / 127) * 0.5;
-        envelope.gain.setValueAtTime(0, this.ctx.currentTime);
-        envelope.gain.linearRampToValueAtTime(gainVal, this.ctx.currentTime + 0.01);
-        envelope.gain.exponentialRampToValueAtTime(0.001, this.ctx.currentTime + duration);
-
-        osc.connect(envelope);
-        envelope.connect(dest);
-
-        osc.start();
-        osc.stop(this.ctx.currentTime + duration + 0.1);
-    }
-
-    playSFZNote(midi, duration, trackId = 0, velocity = 100) {
+    playSFZNote(trackId, midi, velocity, startTime, endTime) {
         const region = this.regions.find(r => {
             const key = r.key !== undefined ? r.key : -1;
             const lokey = r.lokey !== undefined ? r.lokey : (key !== -1 ? key : 0);
             const hikey = r.hikey !== undefined ? r.hikey : (key !== -1 ? key : 127);
-
-            const lovel = r.lovel !== undefined ? r.lovel : 0;
+            const lovel = r.lovel !== undefined ? r.lovel : 1;
             const hivel = r.hivel !== undefined ? r.hivel : 127;
-
-            return (midi >= lokey && midi <= hikey) && (velocity >= lovel && velocity <= hivel);
+            return midi >= lokey && midi <= hikey && velocity >= lovel && velocity <= hivel
+                && r.sample && this.buffers[r.sample];
         });
 
-        if (region && region.sample && this.buffers[region.sample]) {
-            this.triggerSample(this.buffers[region.sample], midi, region, duration, trackId, velocity);
-        } else {
-            console.warn("No SFZ region found for note", midi);
+        if (!region) {
+            console.warn('No SFZ region found for note', midi);
+            return;
         }
-    }
 
-    playSF2Note(midi, duration, trackId = 0, velocity = 100) {
-        try {
-            if (!this.sf2Data || !this.sf2Data.presets) return;
-
-            // Get track instrument settings
-            const instrument = this.trackInstruments[trackId];
-            if (!instrument) {
-                console.warn(`No instrument set for track ${trackId}`);
-                return;
-            }
-
-            // Get preset - prioritize presetIndex if set
-            let preset;
-            if (instrument.presetIndex >= 0 && instrument.presetIndex < this.sf2Data.presets.length) {
-                preset = this.sf2Data.presets[instrument.presetIndex];
-                console.log(`Track ${trackId} using preset index ${instrument.presetIndex}: ${preset.name}`);
-            } else {
-                // Fallback: search by bank/program
-                preset = this.sf2Data.presets.find(p => 
-                    p.preset === instrument.program && 
-                    p.bank === instrument.bank
-                );
-                
-                if (!preset) {
-                    console.warn(`Preset not found for Bank:${instrument.bank} Program:${instrument.program}. Using first preset.`);
-                    preset = this.sf2Data.presets[0];
-                }
-            }
-
-            if (!preset || !preset.zones) {
-                console.warn("No valid preset found");
-                return;
-            }
-
-            let fallbackZone = null;
-
-            // Find instrument from preset zones
-            for (const pzone of preset.zones) {
-                if (pzone.isGlobal) continue;
-                if (pzone.instrumentIndex === undefined) continue;
-
-                const inst = this.sf2Data.instruments[pzone.instrumentIndex];
-                if (!inst || !inst.zones) continue;
-
-                // Find sample zones matching the note
-                for (const izone of inst.zones) {
-                    if (izone.isGlobal) continue;
-                    
-                    const keyLo = izone.keyLo !== undefined ? izone.keyLo : 0;
-                    const keyHi = izone.keyHi !== undefined ? izone.keyHi : 127;
-                    const velLo = izone.velLo !== undefined ? izone.velLo : 0;
-                    const velHi = izone.velHi !== undefined ? izone.velHi : 127;
-
-                    // Keep track of a zone that matches the key, even if velocity doesn't match
-                    if (midi >= keyLo && midi <= keyHi && izone.sampleIndex !== undefined && this.sf2Buffers[izone.sampleIndex]) {
-                        if (!fallbackZone) fallbackZone = { izone, pzone };
-                    }
-
-                    if (midi >= keyLo && midi <= keyHi && velocity >= velLo && velocity <= velHi) {
-                        if (izone.sampleIndex !== undefined && this.sf2Buffers[izone.sampleIndex]) {
-                            const sample = this.sf2Data.samples[izone.sampleIndex];
-                            this.triggerSF2Sample(
-                                this.sf2Buffers[izone.sampleIndex], 
-                                midi, 
-                                sample, 
-                                izone, 
-                                pzone, 
-                                duration, 
-                                trackId,
-                                velocity
-                            );
-                            return; // Play first matching zone
-                        }
-                    }
-                }
-            }
-
-            // If no exact match found, use fallback
-            if (fallbackZone) {
-                console.log(`Using fallback zone for note ${midi} (Vel ${velocity} not matched)`);
-                const { izone, pzone } = fallbackZone;
-                const sample = this.sf2Data.samples[izone.sampleIndex];
-                this.triggerSF2Sample(
-                    this.sf2Buffers[izone.sampleIndex], midi, sample, izone, pzone, duration, trackId, velocity
-                );
-                return;
-            }
-
-            console.warn(`No matching zone found for note ${midi} in preset ${preset.name}`);
-        } catch (e) {
-            console.error("Error in playSF2Note:", e);
-        }
-    }
-
-    triggerSF2Sample(buffer, midi, sample, izone, pzone, duration = 1.0, trackId = 0, velocity = 100) {
+        const buffer = this.buffers[region.sample];
         const source = this.ctx.createBufferSource();
         source.buffer = buffer;
 
-        // Loop handling
-        // Generator 54: sampleModes (0: no loop, 1: loop continuously, 3: loop during keypress)
-        let loopMode = 0;
-        if (izone.generators && izone.generators[54] !== undefined) {
-            loopMode = izone.generators[54];
-        }
+        const rootKey = region.pitch_keycenter !== undefined ? region.pitch_keycenter
+            : (region.key !== undefined ? region.key : 60);
+        const keytrack = region.pitch_keytrack !== undefined ? region.pitch_keytrack : 100;
+        source.detune.value = (midi - rootKey) * keytrack
+            + (region.transpose || 0) * 100 + (region.tune || 0);
 
-        if (loopMode === 1 || loopMode === 3) {
-            // Calculate loop points relative to buffer start
-            const loopStart = sample.loopStart - sample.start;
-            const loopEnd = sample.loopEnd - sample.start;
-            
-            if (loopEnd > loopStart && loopStart >= 0) {
+        const loopMode = region.loop_mode || (region.loop_start !== undefined ? 'loop_continuous' : 'no_loop');
+        if (loopMode === 'loop_continuous' || loopMode === 'loop_sustain') {
+            const sr = buffer.sampleRate;
+            const loopStart = region.loop_start !== undefined ? region.loop_start : 0;
+            const loopEnd = region.loop_end !== undefined ? region.loop_end : buffer.length - 1;
+            if (loopEnd > loopStart) {
                 source.loop = true;
-                source.loopStart = loopStart / sample.sampleRate;
-                source.loopEnd = loopEnd / sample.sampleRate;
+                source.loopStart = loopStart / sr;
+                source.loopEnd = (loopEnd + 1) / sr;
             }
         }
 
-        // Pitch adjustment logic considering SF2 generators
-        // Generator 58: overridingRootKey
-        let rootKey = sample.originalPitch;
-        if (izone.generators && izone.generators[58] !== undefined) {
-            rootKey = izone.generators[58];
+        // amp_veltrack (default 100%) scales the velocity curve; volume is in dB
+        const veltrack = (region.amp_veltrack !== undefined ? region.amp_veltrack : 100) / 100;
+        const velGain = 1 - veltrack + veltrack * (velocity / 127) ** 2;
+        const peak = velGain * dbToGain(region.volume || 0);
+
+        const env = {
+            delay: region.ampeg_delay || 0,
+            attack: region.ampeg_attack || 0.001,
+            hold: region.ampeg_hold || 0,
+            decay: region.ampeg_decay || 0,
+            sustain: region.ampeg_sustain !== undefined ? region.ampeg_sustain / 100 : 1,
+            release: Math.max(region.ampeg_release || 0.01, 0.01)
+        };
+
+        // one_shot plays the whole sample regardless of note length
+        if (loopMode === 'one_shot') {
+            endTime = Math.max(endTime, startTime + buffer.duration / source.playbackRate.value / 2 ** (source.detune.value / 1200));
         }
+        this.startVoice(source, trackId, peak, env, startTime, endTime);
+    }
+}
 
-        // Generator 51: coarseTune (semitones)
-        // Generator 52: fineTune (cents)
-        const instCoarse = (izone.generators && izone.generators[51]) || 0;
-        const instFine = (izone.generators && izone.generators[52]) || 0;
-        const presetCoarse = (pzone.generators && pzone.generators[51]) || 0;
-        const presetFine = (pzone.generators && pzone.generators[52]) || 0;
+/**
+ * Schedules a DAHDSR envelope on an AudioParam for a note held from startTime to
+ * endTime. The release starts from the level actually reached at endTime (so short
+ * notes do not jump), and the note rings for `release` seconds after endTime.
+ * Returns the time at which the envelope reaches silence.
+ */
+function scheduleEnvelope(param, peak, env, startTime, endTime) {
+    const attackStart = startTime + env.delay;
+    const attackEnd = attackStart + env.attack;
+    const holdEnd = attackEnd + env.hold;
+    const sustainLevel = peak * env.sustain;
+    const decayTau = Math.max(env.decay, 0.001) / 4; // ~98% of the way to sustain after `decay` seconds
 
-        // Total detune calculation
-        // Base pitch difference
-        let currentDetune = (midi - rootKey) * 100;
+    param.setValueAtTime(0, startTime);
 
-        // Add sample correction (cents)
-        currentDetune += (sample.pitchCorrection || 0);
-
-        // Add instrument tuning
-        currentDetune += (instCoarse * 100) + instFine;
-
-        // Add preset tuning
-        currentDetune += (presetCoarse * 100) + presetFine;
-
-        source.detune.value = currentDetune;
-
-        // Envelope with duration and release
-        const gain = this.ctx.createGain();
-        const now = this.ctx.currentTime;
-        const releaseTime = 0.1;
-
-        const gainVal = (velocity / 127) * 0.8;
-        gain.gain.setValueAtTime(gainVal, now);
-        gain.gain.setValueAtTime(gainVal, now + duration - releaseTime);
-        gain.gain.linearRampToValueAtTime(0, now + duration);
-
-        source.connect(gain);
-        const dest = this.trackChannels[trackId] ? this.trackChannels[trackId].gain : this.masterGain;
-        gain.connect(dest);
-        source.start(0);
-        source.stop(now + duration + 0.05);
+    let levelAtEnd;
+    if (endTime <= attackStart) {
+        levelAtEnd = 0;
+    } else if (endTime <= attackEnd) {
+        levelAtEnd = peak * (endTime - attackStart) / env.attack;
+        param.setValueAtTime(0, attackStart);
+        param.linearRampToValueAtTime(levelAtEnd, endTime);
+    } else {
+        param.setValueAtTime(0, attackStart);
+        param.linearRampToValueAtTime(peak, attackEnd);
+        if (endTime <= holdEnd) {
+            levelAtEnd = peak;
+        } else {
+            param.setValueAtTime(peak, holdEnd);
+            param.setTargetAtTime(sustainLevel, holdEnd, decayTau);
+            levelAtEnd = sustainLevel + (peak - sustainLevel) * Math.exp(-(endTime - holdEnd) / decayTau);
+        }
     }
 
-    triggerSample(buffer, midi, region, duration = 1.0, trackId = 0, velocity = 100) {
-        const source = this.ctx.createBufferSource();
-        source.buffer = buffer;
+    param.setValueAtTime(levelAtEnd, endTime);
+    param.linearRampToValueAtTime(0, endTime + env.release);
+    return endTime + env.release;
+}
 
-        const rootKey = region.pitch_keycenter !== undefined ? region.pitch_keycenter : (region.key !== undefined ? region.key : 60);
-        const detune = (midi - rootKey) * 100;
+function noteNameToMidi(str) {
+    // Handles both numbers and note names like C4, D#5, Eb3
+    if (!isNaN(str)) return parseInt(str);
 
-        source.detune.value = detune;
+    const match = str.match(/^([A-Ga-g])([#b]?)(-?\d+)$/);
+    if (!match) return parseInt(str) || 60;
 
-        const gain = this.ctx.createGain();
-        const now = this.ctx.currentTime;
-        const releaseTime = 0.1;
+    const noteMap = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 };
+    let midi = noteMap[match[1].toUpperCase()] + (parseInt(match[3]) + 1) * 12;
+    if (match[2] === '#') midi += 1;
+    if (match[2] === 'b') midi -= 1;
+    return midi;
+}
 
-        const gainVal = velocity / 127;
-        gain.gain.setValueAtTime(gainVal, now);
-        gain.gain.setValueAtTime(gainVal, now + duration - releaseTime);
-        gain.gain.linearRampToValueAtTime(0, now + duration);
+function midiToFreq(m) {
+    return 440 * Math.pow(2, (m - 69) / 12);
+}
 
-        source.connect(gain);
-        const dest = this.trackChannels[trackId] ? this.trackChannels[trackId].gain : this.masterGain;
-        gain.connect(dest);
-        source.start(0);
-        source.stop(now + duration + 0.05);
-    }
+function dbToGain(db) {
+    return Math.pow(10, db / 20);
+}
 
-    midiToFreq(m) {
-        return 440 * Math.pow(2, (m - 69) / 12);
-    }
+function clamp7(v) {
+    return Math.max(0, Math.min(127, v));
 }

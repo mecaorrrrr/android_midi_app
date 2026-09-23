@@ -1,4 +1,4 @@
-const CACHE_NAME = 'midi-seq-pro-v1';
+const CACHE_NAME = 'midi-seq-pro-v2';
 const ASSETS = [
     './',
     './index.html',
@@ -8,7 +8,9 @@ const ASSETS = [
     './ui.js',
     './input.js',
     './transport.js',
-    './sf2parser.js',
+    './scheduler.js',
+    './vendor/spessasynth/spessasynth_lib.min.js',
+    './vendor/spessasynth/spessasynth_processor.min.js',
     './midi_encoder.js',
     './icon-512.png'
 ];
@@ -18,6 +20,16 @@ self.addEventListener('install', (event) => {
         caches.open(CACHE_NAME).then((cache) => {
             return cache.addAll(ASSETS);
         })
+    );
+    self.skipWaiting();
+});
+
+// Delete caches from older versions so stale files are never served
+self.addEventListener('activate', (event) => {
+    event.waitUntil(
+        caches.keys()
+            .then((keys) => Promise.all(keys.filter((k) => k !== CACHE_NAME).map((k) => caches.delete(k))))
+            .then(() => self.clients.claim())
     );
 });
 

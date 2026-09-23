@@ -869,24 +869,7 @@ export class InputManager {
 
     playFromCursor() {
         // Toggle: if playing, stop. If stopped, play from cursor.
-        if (this.app.isPlaying) {
-            this.app.isPlaying = false;
-            this.app.cardinalTime = this.app.playbackStartTime;
-        } else {
-            // Ensure audio is initialized (required for first user gesture)
-            if (!this.app.audio.ctx) {
-                this.app.audio.init();
-            }
-            this.app.audio.resume();
-
-            if (this.app.isLooping && this.app.loopRegion) {
-                this.app.cardinalTime = this.app.loopRegion.start;
-            } else {
-                this.app.cardinalTime = this.state.cursor.time;
-            }
-            this.app.playbackStartTime = this.app.cardinalTime;
-            this.app.isPlaying = true;
-        }
+        this.app.togglePlayback(this.state.cursor.time);
     }
 
     processMovement(axis, dir, unit = 'grid') {

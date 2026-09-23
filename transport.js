@@ -26,6 +26,39 @@ export class TransportManager {
         return 120;
     }
 
+    // Seconds elapsed between two beats, integrating over tempo changes (b1 >= b0)
+    secondsBetween(b0, b1) {
+        if (b1 <= b0) return 0;
+        let seconds = 0;
+        let pos = b0;
+        let bpm = this.getBpmAt(b0);
+        for (const e of this.tempoMap) {
+            if (e.beat <= pos) continue;
+            if (e.beat >= b1) break;
+            seconds += (e.beat - pos) * 60 / bpm;
+            pos = e.beat;
+            bpm = e.bpm;
+        }
+        return seconds + (b1 - pos) * 60 / bpm;
+    }
+
+    // Beat reached after playing `seconds` starting from beat b0
+    beatAfter(b0, seconds) {
+        if (seconds <= 0) return b0;
+        let pos = b0;
+        let bpm = this.getBpmAt(b0);
+        let remaining = seconds;
+        for (const e of this.tempoMap) {
+            if (e.beat <= pos) continue;
+            const segSeconds = (e.beat - pos) * 60 / bpm;
+            if (segSeconds >= remaining) break;
+            remaining -= segSeconds;
+            pos = e.beat;
+            bpm = e.bpm;
+        }
+        return pos + remaining * bpm / 60;
+    }
+
     getTimeSigAt(beat) {
         for (let i = this.timeSigMap.length - 1; i >= 0; i--) {
             if (this.timeSigMap[i].beat <= beat) {

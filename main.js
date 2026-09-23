@@ -2,6 +2,7 @@ import { UIManager } from './ui.js';
 import { InputManager } from './input.js';
 import { AudioManager } from './audio.js';
 import { TransportManager } from './transport.js';
+import { Scheduler } from './scheduler.js';
 
 console.log("Initializing Android MIDI App...");
 
@@ -27,11 +28,11 @@ class App {
         this.currentTrackId = 0;
 
         this.transport = new TransportManager(this);
+        this.scheduler = new Scheduler(this);
         this.ui = new UIManager(this);
         this.audio = new AudioManager();
         this.input = new InputManager(this);
 
-        this.lastTime = 0;
         this.resize();
         window.addEventListener('resize', () => this.resize());
 
@@ -520,7 +521,7 @@ class App {
 
             // Determine Instrument Name
             let instrumentName = "Sine Wave";
-            if (this.audio.mode === 'sf2' && this.audio.sf2Data) {
+            if (this.audio.hasSoundBank()) {
                 const presets = this.audio.getPresets();
                 let p = null;
                 // Try to find by index first, then bank/prog
@@ -606,7 +607,7 @@ class App {
         const track = this.songData.tracks[this.currentTrackId];
 
         // Update Preset Selector if SF2 loaded
-        if (this.audio.mode === 'sf2' && this.audio.sf2Data) {
+        if (this.audio.hasSoundBank()) {
             const presetSel = document.getElementById('preset-selector');
             const presets = this.audio.getPresets();
             
@@ -627,38 +628,39 @@ class App {
         }
     }
 
-    loop(timestamp) {
-        const deltaTime = (timestamp - this.lastTime) / 1000;
-        this.lastTime = timestamp;
+    togglePlayback(fromBeat) {
+        if (this.isPlaying) {
+            this.stopPlayback();
+            this.cardinalTime = this.playbackStartTime;
+        } else {
+            this.startPlayback(fromBeat);
+        }
+    }
 
+    startPlayback(fromBeat) {
+        this.audio.init();
+        this.audio.resume();
+        if (this.isLooping && this.loopRegion) {
+            fromBeat = this.loopRegion.start;
+        }
+        this.cardinalTime = fromBeat;
+        this.playbackStartTime = fromBeat;
+        this.isPlaying = true;
+        this.scheduler.start(fromBeat);
+    }
+
+    stopPlayback() {
+        this.isPlaying = false;
+        this.scheduler.stop();
+        this.audio.stopAll();
+    }
+
+    loop(timestamp) {
         this.input.update();
 
         if (this.isPlaying) {
-            const currentBpm = this.transport.getBpmAt(this.cardinalTime);
-            const beatsPerSecond = currentBpm / 60;
-            const advance = beatsPerSecond * deltaTime;
-            
-            let nextTime = this.cardinalTime + advance;
-
-            if (this.isLooping && this.loopRegion) {
-                if (nextTime >= this.loopRegion.end) {
-                    // Play until end of loop
-                    this.checkAndPlayNotes(this.cardinalTime, this.loopRegion.end);
-                    
-                    // Loop back
-                    const remainder = nextTime - this.loopRegion.end;
-                    this.cardinalTime = this.loopRegion.start + remainder;
-                    
-                    // Play from start of loop
-                    this.checkAndPlayNotes(this.loopRegion.start, this.cardinalTime);
-                } else {
-                    this.checkAndPlayNotes(this.cardinalTime, nextTime);
-                    this.cardinalTime = nextTime;
-                }
-            } else {
-                this.checkAndPlayNotes(this.cardinalTime, nextTime);
-                this.cardinalTime = nextTime;
-            }
+            this.scheduler.update();
+            this.cardinalTime = this.scheduler.currentBeat();
         }
 
         this.ui.draw(this.input.state, this.cardinalTime);
@@ -709,7 +711,7 @@ class App {
                 }
 
                 // Sync Instruments to Audio Engine
-                if (this.audio.sf2Data) {
+                if (this.audio.hasSoundBank()) {
                     this.validateTracksAgainstSF2();
                 } else {
                     // Restore values even if no SF2 (will validate when SF2 is loaded)
@@ -719,9 +721,15 @@ class App {
                     });
                 }
 
+                // Apply mixer settings
+                this.songData.tracks.forEach(t => {
+                    this.audio.setTrackVolume(t.id, t.volume);
+                    this.audio.setTrackPan(t.id, t.pan);
+                });
+
                 // Reset State
+                if (this.isPlaying) this.stopPlayback();
                 this.cardinalTime = 0;
-                this.isPlaying = false;
                 this.input.state.cursor.time = 0;
 
                 // Force UI Update
@@ -819,25 +827,6 @@ class App {
         a.download = `song_${Date.now()}.mid`;
         a.click();
         URL.revokeObjectURL(url);
-    }
-
-    checkAndPlayNotes(start, end) {
-        const anySolo = this.songData.tracks.some(t => t.solo);
-
-        for (const track of this.songData.tracks) {
-            if (anySolo) {
-                if (!track.solo) continue;
-            }
-            if (track.muted) continue;
-
-            for (const note of track.notes) {
-                if (note.time >= start && note.time < end) {
-                    const currentBpm = this.transport.getBpmAt(note.time);
-                    const velocity = note.velocity !== undefined ? note.velocity : 100;
-                    this.audio.playNote(note.pitch, note.duration * (60 / currentBpm), track.id, velocity);
-                }
-            }
-        }
     }
 
     populatePresetSelector() {
