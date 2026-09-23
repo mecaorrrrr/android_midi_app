@@ -7,190 +7,112 @@
     <title>Gamepad MIDI Sequencer</title>
     <link rel="stylesheet" href="style.css">
     <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#00d4ff">
+    <meta name="theme-color" content="#1a1d21">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <link rel="apple-touch-icon" href="icon-512.png">
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600&display=swap" rel="stylesheet">
-    <style>
-        /* Modal Styles */
-        .modal {
-            display: none;
-            position: fixed;
-            top: 0;
-            left: 0;
-            width: 100%;
-            height: 100%;
-            background-color: rgba(0, 0, 0, 0.7);
-            z-index: 3000;
-            justify-content: center;
-            align-items: center;
-        }
-        .modal-content {
-            background-color: #2d3436;
-            padding: 20px;
-            border-radius: 10px;
-            max-width: 500px;
-            width: 90%;
-            max-height: 80vh;
-            overflow-y: auto;
-            border: 1px solid #555;
-        }
-        .mapping-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 10px;
-            margin: 20px 0;
-        }
-        .mapping-item {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            background: rgba(0,0,0,0.3);
-            padding: 8px;
-            border-radius: 4px;
-        }
-        .mapping-btn {
-            background: #0984e3;
-            border: none;
-            color: white;
-            padding: 5px 10px;
-            border-radius: 4px;
-            cursor: pointer;
-            min-width: 40px;
-        }
-        .mapping-btn.waiting {
-            background: #e17055;
-            animation: pulse 1s infinite;
-        }
-        @keyframes pulse {
-            0% { opacity: 1; }
-            50% { opacity: 0.5; }
-            100% { opacity: 1; }
-        }
-        .modal-actions {
-            display: flex;
-            justify-content: flex-end;
-            gap: 10px;
-            margin-top: 20px;
-        }
-        /* Preset Selector Visibility Fix */
-        #preset-selector {
-            color: #000000;
-            background-color: #ffffff;
-        }
-        /* Track List Styles */
-        .track-list-table {
-            width: 100%;
-            border-collapse: collapse;
-            margin-top: 10px;
-            font-size: 14px;
-        }
-        .track-list-table th, .track-list-table td {
-            padding: 10px;
-            text-align: left;
-            border-bottom: 1px solid #444;
-        }
-        .track-list-table th {
-            color: #aaa;
-            font-weight: normal;
-        }
-        .track-row {
-            cursor: pointer;
-            transition: background-color 0.2s;
-        }
-        .track-row:hover {
-            background-color: rgba(255, 255, 255, 0.05);
-        }
-        .track-row.active {
-            background-color: rgba(9, 132, 227, 0.3);
-            border-left: 3px solid #0984e3;
-        }
-        .status-on { color: #00b894; font-weight: bold; }
-        .status-off { color: #636e72; }
-        .status-mute { color: #d63031; font-weight: bold; }
-        .track-btn {
-            background: #2d3436;
-            border: 1px solid #636e72;
-            color: #b2bec3;
-            padding: 4px 8px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 12px;
-            min-width: 50px;
-        }
-        .track-btn.active {
-            background: #00b894;
-            color: white;
-            border-color: #00cec9;
-        }
-        .track-btn.active-mute {
-            background: #d63031;
-            color: white;
-            border-color: #ff7675;
-        }
-    </style>
 </head>
 
 <body>
     <div id="app">
-        <header class="glass-panel">
-            <h1>GamePad <span class="accent">MIDI Seq</span></h1>
+        <header class="app-header">
+            <div class="brand">GamePad <span class="accent">MIDI Seq</span></div>
+
             <nav class="view-tabs" title="SELECT long press: switch view">
                 <button id="tab-song" class="view-tab">SONG</button>
                 <button id="tab-pattern" class="view-tab">PATTERN <span id="tab-pattern-label" class="view-tab-label"></span></button>
             </nav>
-            <div class="controls">
-                <button id="btn-play" class="icon-btn">▶</button>
-                <button id="btn-stop" class="icon-btn">■</button>
-                <button id="btn-add-marker" class="secondary-btn">Add Marker</button>
-                <button id="btn-add-bpm" class="secondary-btn">Add BPM</button>
-                <button id="btn-add-ts" class="secondary-btn">Add TS</button>
-                <div class="divider"></div>
-                <button id="btn-save" class="secondary-btn">Save</button>
-                <button id="btn-load" class="secondary-btn">Load</button>
-                <input type="file" id="file-input-project" accept=".json" style="display: none;">
-                <button id="btn-export" class="secondary-btn">Export MIDI</button>
-                <div class="divider"></div>
-                <button id="btn-load-sfz" class="secondary-btn">SFZ</button>
-                <input type="file" id="sfz-file-input" webkitdirectory directory multiple style="display: none;">
-                <button id="btn-load-sf2" class="secondary-btn">SF2</button>
-                <input type="file" id="sf2-file-input" accept=".sf2" style="display: none;">
-                <select id="preset-selector" class="preset-select" disabled>
+
+            <div class="toolbar">
+                <div class="toolbar-group">
+                    <button id="btn-play" class="btn icon" title="Play / Stop (X)">▶</button>
+                    <button id="btn-stop" class="btn icon" title="Stop">■</button>
+                </div>
+
+                <div class="toolbar-group">
+                    <span class="toolbar-label">Marker</span>
+                    <button id="btn-marker-prev" class="btn icon" title="Previous marker">◀</button>
+                    <button id="btn-marker-next" class="btn icon" title="Next marker">▶</button>
+                </div>
+
+                <select id="preset-selector" class="select" disabled title="Instrument of the current track">
                     <option value="">-- No SF2 --</option>
                 </select>
-                <div id="status-display">Ready</div>
+
+                <div class="menu">
+                    <button class="btn" data-menu-toggle>ADD ▾</button>
+                    <div class="menu-panel">
+                        <button class="menu-item" data-action="add-marker">Marker</button>
+                        <button class="menu-item" data-action="add-bpm">BPM</button>
+                        <button class="menu-item" data-action="add-timesig">Time Signature</button>
+                    </div>
+                </div>
+
+                <div class="menu">
+                    <button class="btn" data-menu-toggle>FILE ▾</button>
+                    <div class="menu-panel">
+                        <button class="menu-item" data-action="save">Save Project</button>
+                        <button class="menu-item" data-action="load">Load Project</button>
+                        <button class="menu-item" data-action="export-midi">Export MIDI</button>
+                        <div class="menu-separator"></div>
+                        <button class="menu-item" data-action="load-sf2">Load SoundFont (SF2/SF3/DLS)</button>
+                        <button class="menu-item" data-action="load-sfz">Load SFZ Folder</button>
+                        <div class="menu-separator"></div>
+                        <button class="menu-item" data-action="controller-map">Controller Map</button>
+                    </div>
+                </div>
+
+                <div id="status-display" class="status">Ready</div>
             </div>
+
+            <input type="file" id="file-input-project" accept=".json" hidden>
+            <input type="file" id="sfz-file-input" webkitdirectory directory multiple hidden>
+            <input type="file" id="sf2-file-input" accept=".sf2,.sf3,.dls" hidden>
         </header>
 
         <main>
             <div id="canvas-container">
                 <canvas id="piano-roll"></canvas>
             </div>
+            <div id="gamepad-status" class="hud hud-left">
+                Gamepad: <span id="gamepad-name">Disconnected</span>
+            </div>
+            <div id="cursor-info" class="hud hud-right"></div>
         </main>
-
-        <div id="gamepad-status" class="glass-panel floating-status">
-            Gamepad: <span id="gamepad-name">Disconnected</span>
-        </div>
-
-        <div id="cursor-info" class="glass-panel floating-info"></div>
     </div>
 
-    <!-- Mapping Modal -->
+    <div id="toast" class="toast"></div>
+
+    <!-- Generic dialog (replaces alert / prompt / confirm) -->
+    <div id="dialog" class="modal">
+        <div class="modal-content">
+            <h2 id="dialog-title"></h2>
+            <p id="dialog-message" class="modal-message"></p>
+            <input id="dialog-input" class="input" type="text">
+            <div class="modal-actions">
+                <button id="dialog-cancel" class="btn">Cancel</button>
+                <button id="dialog-ok" class="btn primary">OK</button>
+            </div>
+            <p class="modal-hint">Gamepad: A = OK, B = Cancel</p>
+        </div>
+    </div>
+
+    <!-- Controller mapping -->
     <div id="mapping-modal" class="modal">
-        <div class="modal-content glass-panel">
+        <div class="modal-content">
             <h2>Controller Mapping</h2>
             <div id="mapping-list" class="mapping-grid"></div>
             <div class="modal-actions">
-                <button id="btn-reset-mapping" class="secondary-btn">Reset Defaults</button>
-                <button id="btn-close-mapping" class="secondary-btn">Close</button>
+                <button id="btn-reset-mapping" class="btn">Reset Defaults</button>
+                <button id="btn-close-mapping" class="btn primary">Close</button>
             </div>
         </div>
     </div>
 
-    <!-- Track List Modal -->
+    <!-- Track list -->
     <div id="track-list-modal" class="modal">
-        <div class="modal-content glass-panel" style="max-width: 700px;">
+        <div class="modal-content wide">
             <h2>Track Overview</h2>
             <table class="track-list-table">
                 <thead>
@@ -207,7 +129,7 @@
                 <tbody id="track-list-body"></tbody>
             </table>
             <div class="modal-actions">
-                <button id="btn-close-tracklist" class="secondary-btn">Close</button>
+                <button id="btn-close-tracklist" class="btn primary">Close</button>
             </div>
         </div>
     </div>
@@ -217,7 +139,7 @@
         if ('serviceWorker' in navigator) {
             window.addEventListener('load', () => {
                 navigator.serviceWorker.register('./sw.js')
-                    .then(reg => console.log('SW registered'))
+                    .then(() => console.log('SW registered'))
                     .catch(err => console.log('SW registration failed', err));
             });
         }

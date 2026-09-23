@@ -4,8 +4,8 @@
   "description": "Premium Gamepad MIDI Sequencer",
   "start_url": "./index.html",
   "display": "standalone",
-  "background_color": "#0a0a0c",
-  "theme_color": "#00d4ff",
+  "background_color": "#121417",
+  "theme_color": "#1a1d21",
   "icons": [
     {
       "src": "icon-512.png",

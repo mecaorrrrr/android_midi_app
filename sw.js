@@ -1,4 +1,4 @@
-const CACHE_NAME = 'midi-seq-pro-v3';
+const CACHE_NAME = 'midi-seq-pro-v4';
 const ASSETS = [
     './',
     './index.html',
@@ -12,6 +12,7 @@ const ASSETS = [
     './song.js',
     './song_view.js',
     './song_input.js',
+    './theme.js',
     './vendor/spessasynth/spessasynth_lib.min.js',
     './vendor/spessasynth/spessasynth_processor.min.js',
     './midi_encoder.js',

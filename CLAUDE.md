@@ -21,13 +21,14 @@ Android の Chrome での利用を主目的とし、PC ブラウザでも動作�
 
 | ファイル | 役割 |
 |---|---|
-| `index.html` | エントリ。ヘッダー、`#piano-roll` canvas、各モーダル（コントローラー設定・トラック一覧）。モーダル用 CSS がインライン `<style>` にある |
-| `style.css` | 基本スタイル。CSS 変数（`--primary-accent` 等）を `:root` に定義 |
+| `index.html` | エントリ。ヘッダー（画面タブ、再生/マーカー、プリセット、ADD/FILE メニュー）、`#piano-roll` canvas、HUD、トースト、共通ダイアログ、各モーダル。スタイルは持たない |
+| `style.css` | 全スタイル。`:root` のデザイントークン（色・フォント・角丸・トラック色 `--track-1..8`）が**唯一の定義元** |
+| `theme.js` | `loadTheme()` で CSS のトークンを読み込み、Canvas 描画用に `theme` / `font()` / `withAlpha()` / `trackColor()` を提供 |
 | `main.js` | `App` クラス。状態（`songData`）、画面（`view`）切替、undo/redo、FILE/ADD メニューの**動的生成**、モーダル、保存/読込、MIDI 書き出し、メインループ |
 | `song.js` | ソングのデータモデルと純粋関数（パターン/クリップの作成、`clipAt`、`forEachSongNote`、`flattenTrack` など）。DOM 非依存なので Node でテストできる |
 | `song_view.js` | `SongView`。ソング画面（トラック×小節）の Canvas 描画とマウス操作。トラック色 `TRACK_COLORS` |
 | `song_input.js` | `SongInput`。ソング画面のゲームパッド操作（`InputManager` から呼ばれる） |
-| `ui.js` | `UIManager`。パターン画面（ピアノロール）の Canvas 描画。Canvas のサイズ/DPI 管理もここ（`SongView` は `app.ui.width/height` を使う）。色はコード内にハードコード |
+| `ui.js` | `UIManager`。パターン画面（ピアノロール）の Canvas 描画。Canvas のサイズ/DPI 管理もここ（`SongView` は `app.ui.width/height` を使う） |
 | `input.js` | `InputManager`。Gamepad ポーリング、ボタンマッピング（localStorage `gamepad_mapping`）、共通ボタン（X/SELECT/START/L1/R1/L2）、ピアノロールの編集操作。ソング画面では `this.song`（`SongInput`）に委譲。**キーボード操作は未実装**（README の記載はあるがコードに無い） |
 | `audio.js` | `AudioManager`。SF2/SF3/DLS は spessasynth（AudioWorklet）で再生、SFZ は自前サンプラー、音源未ロード時はサイン波。全発音は `playNoteAt(trackId, pitch, vel, startTime, endTime)`（AudioContext 時刻）経由 |
 | `scheduler.js` | `Scheduler`。先読み（lookahead 0.12 秒）で `playNoteAt` に正確な時刻付きでノートを渡す。ループはセグメント（AudioContext 時刻↔拍の対応）を追加して処理 |
@@ -52,13 +53,14 @@ Android の Chrome での利用を主目的とし、PC ブラウザでも動作�
 - **発音（SF2）**: トラック N = MIDI チャンネル N。音量/パンは CC7/CC10、音色は Bank Select (CC0/CC32) + Program Change、ドラムは `midiChannels[N].setDrums(true)`（プリセット一覧では bank 128 として扱う）。ADSR・フィルター・モジュレーター等はすべて spessasynth が SF2 仕様どおりに処理する。
 - **停止**: spessasynth の予約済みイベントは取り消せないため、`AudioManager.stopAll()` は未来の noteOn と同時刻に noteOff を送って打ち消し、そのうえで `synth.stopAll()` を呼ぶ。
 - **SFZ / サイン波**: Web Audio のトラック別 Gain→StereoPanner→Master 経路。`scheduleEnvelope()` で DAHDSR（SFZ は `ampeg_*`）を適用し、ノート終了後に release 分だけ余韻が鳴る。
-- UI 部品の多くは `main.js` 内で `document.createElement` + インライン `style` で作られており、`style.css`・`index.html` のインライン CSS・`ui.js` のハードコード色の 3 系統にスタイルが分散している。
+- **GUI の決まり**: 色・フォントは `style.css` の `:root` トークンだけで定義する。Canvas では `theme.js` 経由で参照し、JS/HTML に色コードやインライン `style` を直接書かない（トラック色のスウォッチのようなデータ由来の値は例外）。ボタンは `.btn`（`.icon` / `.primary` / `.small` / `.active`）、メニューは `.menu` + `[data-menu-toggle]` + `.menu-item[data-action]`（処理は `main.js` の `setupMenus()`）、モーダルは `.modal` に `.open` を付け外しする。
+- **ダイアログ**: `alert` / `prompt` / `confirm` は使わず `app.showDialog({ title, message, input, cancel })`（Promise）/ `app.showAlert()` / `app.showToast()` を使う。ダイアログ表示中はゲームパッドの A/B が OK/キャンセルになり、閉じた後は A/B を離すまでエディター側に入力を渡さない（`input.js` の `waitForRelease`）。
 
 ## 予定している改修（ユーザー要望）
 
 1. ~~**再生エンジンの修正**~~: 完了。spessasynth に置き換え、先読みスケジューラーを導入した。
 2. ~~**パターン/ソング構成**~~: 完了。トラックごとのパターン、可変長（小節単位）、旧形式の互換なし。
-3. **GUI の統一**: 分散しているスタイル（インライン style、index.html 内 CSS、`ui.js` / `song_view.js` の canvas ハードコード色）を共通のデザイントークンに集約して見た目を統一する。
+3. ~~**GUI の統一**~~: 完了。デザイントークンを `style.css` に集約し、Canvas・HTML・ダイアログを統一した。
 
 ## 作業上の注意
 

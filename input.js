@@ -189,6 +189,26 @@ export class InputManager {
             return; // Skip normal input processing
         }
 
+        // Dialog open: A = OK, B = Cancel, everything else is ignored
+        // Afterwards the editor ignores A/B until they are released
+        const abHeld = gp.buttons[this.buttonMap.A]?.pressed || gp.buttons[this.buttonMap.B]?.pressed;
+        if (this.app.isDialogOpen || (this.waitForRelease && abHeld)) {
+            const edge = (i) => gp.buttons[i] && gp.buttons[i].pressed && !this.lastButtonState[i];
+            if (this.app.isDialogOpen) {
+                if (edge(this.buttonMap.A)) this.app.closeDialog(true);
+                else if (edge(this.buttonMap.B)) this.app.closeDialog(false);
+                this.waitForRelease = true;
+            }
+            for (let i = 0; i < gp.buttons.length; i++) {
+                this.lastButtonState[i] = gp.buttons[i].pressed;
+            }
+            // Pretend A/B were never down so their release is not seen as a press
+            this.lastButtonState[this.buttonMap.A] = false;
+            this.lastButtonState[this.buttonMap.B] = false;
+            return;
+        }
+        this.waitForRelease = false;
+
         // D-PAD & Stick handling for Cursor Movement
         // Mapping (Standard Gamepad)
         // Axes 0,1: Left Stick

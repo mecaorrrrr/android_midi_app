@@ -62,14 +62,20 @@ GamePad MIDI Sequencerは、ゲームコントローラーで操作できるWeb 
 
 | 操作 | 方法 |
 |------|------|
-| 保存 | FILE → Save（JSON形式） |
-| 読み込み | FILE → Load（JSON選択） |
+| 保存 | FILE → Save Project（JSON形式） |
+| 読み込み | FILE → Load Project（JSON選択） |
 | MIDIエクスポート | FILE → Export MIDI |
 
 ### 4.2 サウンドフォント読み込み
 
-1. **SF2ファイル**: FILE → SF2 から .sf2 ファイルを選択
-2. **SFZファイル**: FILE → SFZ から SFZファイルとサンプルを選択
+1. **SF2 / SF3 / DLS ファイル**: FILE → Load SoundFont からファイルを選択
+2. **SFZファイル**: FILE → Load SFZ Folder から SFZファイルとサンプルの入ったフォルダを選択
+
+音色はヘッダーのプリセット選択欄で、現在のトラックに設定します。
+
+### 4.3 ダイアログ
+
+BPM・拍子の入力や確認のダイアログは、ゲームパッドの **A = OK / B = キャンセル** でも操作できます。
 
 ## 5. ゲームコントローラー操作
 

@@ -1,7 +1,5 @@
 import { getPattern, clipAt } from './song.js';
-
-// One color per track (clips, header stripes)
-export const TRACK_COLORS = ['#fd79a8', '#74b9ff', '#55efc4', '#ffeaa7', '#a29bfe', '#fab1a0', '#81ecec', '#ff7675'];
+import { theme, font, withAlpha, trackColor } from './theme.js';
 
 /**
  * Song (arrangement) view: tracks as rows, bars as columns, clips as blocks.
@@ -81,7 +79,7 @@ export class SongView {
 
         this.autoScroll(playheadBeat);
 
-        ctx.fillStyle = '#272A2D';
+        ctx.fillStyle = theme.surface2;
         ctx.fillRect(0, 0, this.width, this.height);
 
         const firstBar = Math.max(0, Math.floor(this.scrollX / this.barWidth));
@@ -91,15 +89,15 @@ export class SongView {
         for (const track of song.tracks) {
             const y = this.trackToY(track.id);
             ctx.fillStyle = track.id === this.app.currentTrackId
-                ? 'rgba(108, 92, 231, 0.12)'
-                : (track.id % 2 ? 'rgba(0, 0, 0, 0.15)' : 'rgba(255, 255, 255, 0.02)');
+                ? withAlpha(theme.accent, 0.12)
+                : (track.id % 2 ? withAlpha(theme.bg, 0.3) : withAlpha(theme.text, 0.02));
             ctx.fillRect(this.headerWidth, y, this.width - this.headerWidth, rowH);
         }
 
         // Bar lines (stronger every 4 bars)
         for (let bar = firstBar; bar <= lastBar; bar++) {
             const x = this.barToX(bar);
-            ctx.strokeStyle = bar % 4 === 0 ? '#636e72' : '#3d4448';
+            ctx.strokeStyle = bar % 4 === 0 ? theme.gridBar : theme.gridLine;
             ctx.lineWidth = bar % 4 === 0 ? 1.5 : 1;
             ctx.beginPath();
             ctx.moveTo(x, this.rulerHeight);
@@ -112,7 +110,7 @@ export class SongView {
         if (loop.region) {
             const x0 = this.barToX(transport.beatToBar(loop.region.start));
             const x1 = this.barToX(transport.beatToBar(loop.region.end));
-            ctx.fillStyle = loop.enabled ? 'rgba(0, 206, 201, 0.08)' : 'rgba(255, 255, 255, 0.03)';
+            ctx.fillStyle = loop.enabled ? withAlpha(theme.loop, 0.08) : withAlpha(theme.text, 0.03);
             ctx.fillRect(x0, this.rulerHeight, x1 - x0, this.height);
         }
 
@@ -126,9 +124,9 @@ export class SongView {
             const y = this.trackToY(sel.track0);
             const w = (sel.bar1 - sel.bar0 + 1) * this.barWidth;
             const h = (sel.track1 - sel.track0 + 1) * rowH;
-            ctx.fillStyle = 'rgba(0, 184, 148, 0.15)';
+            ctx.fillStyle = withAlpha(theme.selection, 0.15);
             ctx.fillRect(x, y, w, h);
-            ctx.strokeStyle = '#00b894';
+            ctx.strokeStyle = theme.selection;
             ctx.lineWidth = 2;
             ctx.setLineDash([5, 5]);
             ctx.strokeRect(x, y, w, h);
@@ -143,13 +141,13 @@ export class SongView {
             const pattern = getPattern(song, clipUnder.patternId);
             const x0 = this.barToX(transport.beatToBar(clipUnder.start));
             const x1 = this.barToX(transport.beatToBar(clipUnder.start + pattern.length));
-            ctx.strokeStyle = 'rgba(255, 255, 255, 0.6)';
+            ctx.strokeStyle = withAlpha(theme.text, 0.6);
             ctx.lineWidth = 1;
             ctx.strokeRect(x0 + 1, cy + 2, x1 - x0 - 2, rowH - 4);
         }
-        ctx.fillStyle = 'rgba(108, 92, 231, 0.35)';
+        ctx.fillStyle = withAlpha(theme.accent, 0.35);
         ctx.fillRect(this.barToX(state.cursorBar), cy, this.barWidth, rowH);
-        ctx.strokeStyle = '#6c5ce7';
+        ctx.strokeStyle = theme.accent;
         ctx.lineWidth = 2;
         ctx.strokeRect(this.barToX(state.cursorBar), cy, this.barWidth, rowH);
 
@@ -157,7 +155,7 @@ export class SongView {
         if (this.app.isPlaying) {
             const x = this.barToX(transport.beatToBar(playheadBeat));
             if (x >= this.headerWidth && x <= this.width) {
-                ctx.strokeStyle = '#0984e3';
+                ctx.strokeStyle = theme.playhead;
                 ctx.lineWidth = 2;
                 ctx.beginPath();
                 ctx.moveTo(x, this.rulerHeight);
@@ -202,14 +200,14 @@ export class SongView {
         const y = this.trackToY(clip.trackId) + 3;
         const h = this.rowHeight - 6;
         const w = x1 - x0 - 2;
-        const color = TRACK_COLORS[clip.trackId % TRACK_COLORS.length];
+        const color = trackColor(clip.trackId);
         const track = this.app.songData.tracks[clip.trackId];
         const dimmed = track.muted || (this.app.songData.tracks.some(t => t.solo) && !track.solo);
 
         ctx.save();
         ctx.globalAlpha = dimmed ? 0.35 : 1;
 
-        ctx.fillStyle = hexToRgba(color, 0.25);
+        ctx.fillStyle = withAlpha(color, 0.25);
         ctx.fillRect(x0 + 1, y, w, h);
         ctx.strokeStyle = color;
         ctx.lineWidth = 1.5;
@@ -220,7 +218,7 @@ export class SongView {
         ctx.rect(x0 + 1, y, w, h);
         ctx.clip();
         ctx.fillStyle = color;
-        ctx.font = 'bold 12px sans-serif';
+        ctx.font = font(12, 'bold');
         ctx.textAlign = 'left';
         ctx.fillText(pattern.name, x0 + 5, y + 13);
 
@@ -254,45 +252,45 @@ export class SongView {
         const rowH = this.rowHeight;
         const anySolo = this.app.songData.tracks.some(t => t.solo);
 
-        ctx.fillStyle = '#1e272e';
+        ctx.fillStyle = theme.surface1;
         ctx.fillRect(0, this.rulerHeight, this.headerWidth, this.height);
 
         for (const track of this.app.songData.tracks) {
             const y = this.trackToY(track.id);
             if (y + rowH < this.rulerHeight || y > this.height) continue;
             const active = track.id === this.app.currentTrackId;
-            const color = TRACK_COLORS[track.id % TRACK_COLORS.length];
+            const color = trackColor(track.id);
 
-            ctx.fillStyle = active ? '#2d3436' : '#1e272e';
+            ctx.fillStyle = active ? theme.surface3 : theme.surface1;
             ctx.fillRect(0, y, this.headerWidth, rowH);
             ctx.fillStyle = color;
             ctx.fillRect(0, y, 4, rowH);
 
             ctx.textAlign = 'left';
-            ctx.fillStyle = active ? '#ffffff' : '#dfe6e9';
-            ctx.font = `${active ? 'bold ' : ''}12px sans-serif`;
+            ctx.fillStyle = active ? theme.text : theme.textMuted;
+            ctx.font = font(12, active ? 'bold' : '');
             ctx.fillText(track.name, 10, y + 16);
-            ctx.fillStyle = '#b2bec3';
-            ctx.font = '10px sans-serif';
+            ctx.fillStyle = theme.textDim;
+            ctx.font = font(10);
             ctx.fillText(truncate(this.app.getInstrumentName(track), 20), 10, y + 30);
 
             // Mute / Solo badges and volume bar
             const badgeY = y + rowH - 16;
             if (rowH >= 48) {
-                drawBadge(ctx, 10, badgeY, 'M', track.muted, '#d63031');
-                drawBadge(ctx, 30, badgeY, 'S', track.solo, '#00b894');
-                ctx.fillStyle = '#3d4448';
+                drawBadge(ctx, 10, badgeY, 'M', track.muted, theme.danger);
+                drawBadge(ctx, 30, badgeY, 'S', track.solo, theme.selection);
+                ctx.fillStyle = theme.surface3;
                 ctx.fillRect(52, badgeY + 5, 80, 4);
-                ctx.fillStyle = anySolo && !track.solo ? '#636e72' : color;
+                ctx.fillStyle = anySolo && !track.solo ? theme.textDim : color;
                 ctx.fillRect(52, badgeY + 5, 80 * track.volume, 4);
             } else {
                 const flags = `${track.muted ? 'M ' : ''}${track.solo ? 'S' : ''}`;
-                ctx.fillStyle = track.muted ? '#d63031' : '#00b894';
+                ctx.fillStyle = track.muted ? theme.danger : theme.selection;
                 ctx.textAlign = 'right';
                 ctx.fillText(flags, this.headerWidth - 6, y + 16);
             }
 
-            ctx.strokeStyle = '#2d3436';
+            ctx.strokeStyle = theme.border;
             ctx.lineWidth = 1;
             ctx.beginPath();
             ctx.moveTo(0, y + rowH);
@@ -300,7 +298,7 @@ export class SongView {
             ctx.stroke();
         }
 
-        ctx.strokeStyle = '#000';
+        ctx.strokeStyle = theme.bg;
         ctx.beginPath();
         ctx.moveTo(this.headerWidth, this.rulerHeight);
         ctx.lineTo(this.headerWidth, this.height);
@@ -311,13 +309,13 @@ export class SongView {
         const ctx = this.ctx;
         const transport = this.app.transport;
 
-        ctx.fillStyle = '#2d3436';
+        ctx.fillStyle = theme.surface1;
         ctx.fillRect(0, 0, this.headerWidth, this.rulerHeight);
-        ctx.fillStyle = 'rgba(30, 30, 30, 0.95)';
+        ctx.fillStyle = withAlpha(theme.surface1, 0.95);
         ctx.fillRect(this.headerWidth, 0, this.width - this.headerWidth, this.rulerHeight);
 
-        ctx.fillStyle = '#b2bec3';
-        ctx.font = '11px sans-serif';
+        ctx.fillStyle = theme.textMuted;
+        ctx.font = font(11);
         ctx.textAlign = 'left';
         ctx.fillText('SONG', 10, 19);
 
@@ -327,9 +325,9 @@ export class SongView {
             const x0 = Math.max(this.headerWidth, this.barToX(transport.beatToBar(loop.region.start)));
             const x1 = Math.min(this.width, this.barToX(transport.beatToBar(loop.region.end)));
             if (x1 > x0) {
-                ctx.fillStyle = loop.enabled ? 'rgba(0, 206, 201, 0.3)' : 'rgba(30, 39, 46, 0.5)';
+                ctx.fillStyle = loop.enabled ? withAlpha(theme.loop, 0.3) : withAlpha(theme.surface3, 0.6);
                 ctx.fillRect(x0, 0, x1 - x0, this.rulerHeight);
-                ctx.strokeStyle = loop.enabled ? '#00cec9' : '#555';
+                ctx.strokeStyle = loop.enabled ? theme.loop : theme.border;
                 ctx.lineWidth = 2;
                 ctx.strokeRect(x0, 0, x1 - x0, this.rulerHeight);
             }
@@ -340,29 +338,29 @@ export class SongView {
         for (let bar = firstBar; bar <= lastBar; bar++) {
             const x = this.barToX(bar);
             if (x < this.headerWidth - 1) continue;
-            ctx.strokeStyle = '#999';
+            ctx.strokeStyle = theme.borderStrong;
             ctx.lineWidth = 1;
             ctx.beginPath();
             ctx.moveTo(x, bar % every === 0 ? 0 : this.rulerHeight - 6);
             ctx.lineTo(x, this.rulerHeight);
             ctx.stroke();
             if (bar % every === 0) {
-                ctx.fillStyle = '#dfe6e9';
-                ctx.font = '12px sans-serif';
+                ctx.fillStyle = theme.text;
+                ctx.font = font(12);
                 ctx.fillText(String(bar + 1), x + 4, 14);
             }
         }
 
         // Markers
-        ctx.font = 'bold 11px sans-serif';
+        ctx.font = font(11, 'bold');
         for (const marker of transport.markerMap) {
             const x = this.barToX(transport.beatToBar(marker.beat));
             if (x < this.headerWidth || x > this.width) continue;
-            ctx.fillStyle = '#fdcb6e';
+            ctx.fillStyle = theme.marker;
             ctx.fillText(marker.label, x + 4, 27);
         }
 
-        ctx.strokeStyle = '#555';
+        ctx.strokeStyle = theme.border;
         ctx.beginPath();
         ctx.moveTo(0, this.rulerHeight);
         ctx.lineTo(this.width, this.rulerHeight);
@@ -371,21 +369,16 @@ export class SongView {
 }
 
 function drawBadge(ctx, x, y, label, on, color) {
-    ctx.fillStyle = on ? color : '#2d3436';
+    ctx.fillStyle = on ? color : theme.surface3;
     ctx.fillRect(x, y, 16, 14);
-    ctx.strokeStyle = on ? color : '#636e72';
+    ctx.strokeStyle = on ? color : theme.textDim;
     ctx.lineWidth = 1;
     ctx.strokeRect(x, y, 16, 14);
-    ctx.fillStyle = on ? '#fff' : '#636e72';
-    ctx.font = 'bold 10px sans-serif';
+    ctx.fillStyle = on ? theme.text : theme.textDim;
+    ctx.font = font(10, 'bold');
     ctx.textAlign = 'center';
     ctx.fillText(label, x + 8, y + 11);
     ctx.textAlign = 'left';
-}
-
-function hexToRgba(hex, alpha) {
-    const n = parseInt(hex.slice(1), 16);
-    return `rgba(${(n >> 16) & 255}, ${(n >> 8) & 255}, ${n & 255}, ${alpha})`;
 }
 
 function truncate(text, max) {

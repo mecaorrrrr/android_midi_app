@@ -1,31 +1,62 @@
+/* ------------------------------------------------------------------ Tokens
+   Single source of truth for colors and type. Canvas drawing reads the same
+   values through theme.js, so change them here only. */
 :root {
-    --bg-color: #0d0d12;
-    --panel-bg: rgba(255, 255, 255, 0.05);
-    --panel-border: rgba(255, 255, 255, 0.1);
-    --primary-accent: #6c5ce7;
-    --secondary-accent: #a29bfe;
-    --text-main: #ffffff;
-    --text-muted: #b2bec3;
-    --grid-line: #2d3436;
-    --grid-line-bar: #636e72;
-    --note-bg: #fd79a8;
-    --cursor-color: rgba(108, 92, 231, 0.5);
+    --bg: #121417;
+    --surface-1: #1a1d21;
+    --surface-2: #22262b;
+    --surface-3: #2d3238;
+    --border: #353b42;
+    --border-strong: #4d555e;
+    --text: #e9ecef;
+    --text-muted: #a3abb4;
+    --text-dim: #6c757d;
+
+    --accent: #6c5ce7;
+    --accent-hover: #8173ec;
+    --selection: #00b894;
+    --loop: #00cec9;
+    --marker: #fdcb6e;
+    --playhead: #4dabf7;
+    --danger: #e05d5d;
+
+    /* Canvas grid */
+    --grid-line: #353b42;
+    --grid-bar: #5d666f;
+    --key-white: #e9ecef;
+    --key-black: #2d3238;
+
+    /* One color per track (clips and notes) */
+    --track-1: #fd79a8;
+    --track-2: #74b9ff;
+    --track-3: #55efc4;
+    --track-4: #ffeaa7;
+    --track-5: #a29bfe;
+    --track-6: #fab1a0;
+    --track-7: #81ecec;
+    --track-8: #ff7675;
+
     --font-main: 'Outfit', sans-serif;
+    --font-mono: ui-monospace, 'Consolas', monospace;
+    --radius: 8px;
+    --radius-sm: 4px;
+    --control-height: 34px;
+    --shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
 }
 
 * {
     box-sizing: border-box;
     margin: 0;
     padding: 0;
-    user-select: none;
-    /* Prevent selection for app-like feel */
+    user-select: none; /* App-like feel */
     -webkit-tap-highlight-color: transparent;
 }
 
 body {
-    background-color: var(--bg-color);
-    color: var(--text-main);
+    background-color: var(--bg);
+    color: var(--text);
     font-family: var(--font-main);
+    font-size: 14px;
     overflow: hidden;
     height: 100vh;
     width: 100vw;
@@ -37,168 +68,424 @@ body {
     height: 100%;
 }
 
-/* Glassmorphism Header */
-header.glass-panel {
-    background: var(--panel-bg);
-    backdrop-filter: blur(10px);
-    -webkit-backdrop-filter: blur(10px);
-    border-bottom: 1px solid var(--panel-border);
-    padding: 1rem 1.5rem;
-    display: flex;
-    justify-content: space-between;
+/* ---------------------------------------------------------------- Controls */
+.btn {
+    height: var(--control-height);
+    padding: 0 0.9rem;
+    display: inline-flex;
     align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font: inherit;
+    font-weight: 600;
+    letter-spacing: 0.5px;
+    cursor: pointer;
+    transition: background 0.15s, border-color 0.15s;
+    white-space: nowrap;
+}
+
+.btn:hover {
+    background: var(--surface-3);
+    border-color: var(--border-strong);
+}
+
+.btn:active {
+    transform: scale(0.96);
+}
+
+.btn.icon {
+    width: var(--control-height);
+    padding: 0;
+    font-size: 0.9rem;
+}
+
+.btn.primary {
+    background: var(--accent);
+    border-color: var(--accent);
+}
+
+.btn.primary:hover {
+    background: var(--accent-hover);
+}
+
+.btn.active {
+    background: var(--accent);
+    border-color: var(--accent);
+}
+
+.btn.danger.active {
+    background: var(--danger);
+    border-color: var(--danger);
+}
+
+.btn.success.active {
+    background: var(--selection);
+    border-color: var(--selection);
+}
+
+.btn.small {
+    height: 26px;
+    padding: 0 0.6rem;
+    font-size: 0.8rem;
+}
+
+.select {
+    height: var(--control-height);
+    padding: 0 0.6rem;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    color: var(--text);
+    font: inherit;
+    font-size: 0.85rem;
+    min-width: 150px;
+    max-width: 220px;
+}
+
+.select option {
+    background: var(--surface-1);
+    color: var(--text);
+}
+
+.select:disabled {
+    opacity: 0.5;
+}
+
+.input {
+    width: 100%;
+    height: var(--control-height);
+    padding: 0 0.7rem;
+    background: var(--bg);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    color: var(--text);
+    font: inherit;
+    user-select: text;
+}
+
+.input:focus {
+    outline: none;
+    border-color: var(--accent);
+}
+
+/* ------------------------------------------------------------------ Header */
+.app-header {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem 1rem;
+    padding: 0.5rem 1rem;
+    background: var(--surface-1);
+    border-bottom: 1px solid var(--border);
     z-index: 10;
 }
 
-h1 {
+.brand {
     font-weight: 300;
-    font-size: 1.2rem;
+    font-size: 1.1rem;
     letter-spacing: 1px;
+    white-space: nowrap;
+}
+
+.accent {
+    color: var(--accent);
+    font-weight: 600;
+}
+
+.toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.5rem;
+    margin-left: auto;
+}
+
+.toolbar-group {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding-right: 0.5rem;
+    border-right: 1px solid var(--border);
+}
+
+.toolbar-label {
+    color: var(--text-muted);
+    font-size: 0.8rem;
+    margin-right: 0.25rem;
+}
+
+.status {
+    min-width: 5rem;
+    color: var(--text-muted);
+    font-size: 0.8rem;
 }
 
 /* Song / Pattern view switch */
 .view-tabs {
     display: flex;
-    gap: 0;
-    margin: 0 1rem;
-    border: 1px solid var(--panel-border);
-    border-radius: 8px;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
     overflow: hidden;
 }
 
 .view-tab {
+    height: var(--control-height);
+    padding: 0 0.9rem;
+    background: var(--surface-2);
     border: none;
-    border-radius: 0;
-    padding: 0.4rem 0.9rem;
-    font-size: 0.85rem;
-    letter-spacing: 1px;
     color: var(--text-muted);
+    font: inherit;
+    font-weight: 600;
+    letter-spacing: 1px;
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.view-tab + .view-tab {
+    border-left: 1px solid var(--border);
 }
 
 .view-tab.active {
-    background: var(--primary-accent);
-    color: var(--text-main);
+    background: var(--accent);
+    color: var(--text);
 }
 
 .view-tab-label {
     font-size: 0.75rem;
-    opacity: 0.8;
+    font-weight: 400;
     letter-spacing: 0;
     margin-left: 0.3rem;
+    opacity: 0.85;
 }
 
-.accent {
-    color: var(--primary-accent);
-    font-weight: 600;
+/* Dropdown menus (FILE / ADD) */
+.menu {
+    position: relative;
 }
 
-.controls {
+.menu-panel {
+    display: none;
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    min-width: 170px;
+    padding: 0.3rem;
+    background: var(--surface-1);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    z-index: 1000;
+    flex-direction: column;
+}
+
+.menu.open .menu-panel {
     display: flex;
-    gap: 1rem;
-    align-items: center;
 }
 
-button {
-    background: transparent;
-    border: 1px solid var(--panel-border);
-    color: var(--text-main);
-    padding: 0.5rem 1rem;
-    border-radius: 8px;
-    font-family: inherit;
+.menu-item {
+    padding: 0.5rem 0.7rem;
+    background: none;
+    border: none;
+    border-radius: var(--radius-sm);
+    color: var(--text);
+    font: inherit;
+    text-align: left;
     cursor: pointer;
-    transition: all 0.2s ease;
 }
 
-button:hover {
-    background: rgba(255, 255, 255, 0.1);
-    border-color: var(--secondary-accent);
+.menu-item:hover {
+    background: var(--surface-3);
 }
 
-button:active {
-    transform: scale(0.95);
+.menu-separator {
+    height: 1px;
+    margin: 0.3rem 0.2rem;
+    background: var(--border);
 }
 
-.icon-btn {
-    font-size: 1.2rem;
-    width: 40px;
-    height: 40px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0;
-    background: rgba(108, 92, 231, 0.1);
-    border-color: var(--primary-accent);
-}
-
-.secondary-btn {
-    font-size: 0.9rem;
-}
-
-.preset-select {
-    background: rgba(255, 255, 255, 0.1);
-    border: 1px solid var(--panel-border);
-    color: var(--text-main);
-    padding: 0.5rem;
-    border-radius: 8px;
-    font-family: inherit;
-    font-size: 0.85rem;
-    min-width: 150px;
-    max-width: 200px;
-}
-
-.preset-select:disabled {
-    opacity: 0.5;
-}
-
-/* Canvas Area */
+/* ------------------------------------------------------------ Canvas area */
 main {
     flex: 1;
     position: relative;
     overflow: hidden;
-    background: #111;
+    background: var(--surface-2);
     cursor: crosshair;
 }
 
 #canvas-container {
-    width: 100%;
-    height: 100%;
     position: absolute;
-    top: 0;
-    left: 0;
+    inset: 0;
 }
 
 canvas {
     display: block;
 }
 
-/* Floating Status Elements */
-.floating-status {
+/* Heads-up panels over the canvas */
+.hud {
     position: absolute;
-    bottom: 20px;
-    left: 20px;
-    padding: 10px 20px;
-    border-radius: 20px;
-    background: rgba(0, 0, 0, 0.6);
-    border: 1px solid var(--panel-border);
+    bottom: 16px;
+    padding: 0.5rem 1rem;
+    background: rgba(18, 20, 23, 0.85);
+    border: 1px solid var(--border);
+    border-radius: 999px;
     font-size: 0.8rem;
-    color: var(--text-muted);
     pointer-events: none;
 }
 
-.floating-info {
-    position: absolute;
-    bottom: 20px;
-    right: 20px;
-    padding: 10px 20px;
-    border-radius: 20px;
-    background: rgba(0, 0, 0, 0.6);
-    border: 1px solid var(--panel-border);
-    font-size: 0.9rem;
-    font-family: monospace;
-    pointer-events: none;
+.hud-left {
+    left: 16px;
+    color: var(--text-muted);
 }
 
-#status-display {
-    font-size: 0.8rem;
+.hud-right {
+    right: 16px;
+    font-family: var(--font-mono);
+    font-size: 0.85rem;
+}
+
+.toast {
+    position: fixed;
+    bottom: 70px;
+    left: 50%;
+    transform: translateX(-50%);
+    padding: 0.6rem 1.2rem;
+    background: var(--surface-3);
+    border: 1px solid var(--border-strong);
+    border-radius: 999px;
+    box-shadow: var(--shadow);
+    z-index: 2000;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.25s;
+}
+
+.toast.show {
+    opacity: 1;
+}
+
+/* ------------------------------------------------------------------ Modals */
+.modal {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.6);
+    z-index: 3000;
+    justify-content: center;
+    align-items: center;
+}
+
+.modal.open {
+    display: flex;
+}
+
+.modal-content {
+    width: 90%;
+    max-width: 500px;
+    max-height: 85vh;
+    overflow-y: auto;
+    padding: 1.25rem;
+    background: var(--surface-1);
+    border: 1px solid var(--border-strong);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+}
+
+.modal-content.wide {
+    max-width: 720px;
+}
+
+.modal-content h2 {
+    font-size: 1.1rem;
+    font-weight: 600;
+    margin-bottom: 1rem;
+}
+
+.modal-message {
     color: var(--text-muted);
+    margin-bottom: 0.75rem;
+}
+
+.modal-hint {
+    color: var(--text-dim);
+    font-size: 0.75rem;
+    margin-top: 0.75rem;
+}
+
+.modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+    margin-top: 1.25rem;
+}
+
+/* Controller mapping */
+.mapping-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 0.5rem;
+}
+
+.mapping-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.4rem 0.6rem;
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+}
+
+.mapping-item .btn.waiting {
+    background: var(--danger);
+    border-color: var(--danger);
+    animation: pulse 1s infinite;
+}
+
+@keyframes pulse {
+    50% { opacity: 0.5; }
+}
+
+/* Track list */
+.track-list-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.track-list-table th,
+.track-list-table td {
+    padding: 0.5rem 0.6rem;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+}
+
+.track-list-table th {
+    color: var(--text-muted);
+    font-weight: 400;
+    font-size: 0.8rem;
+}
+
+.track-row {
+    cursor: pointer;
+}
+
+.track-row:hover {
+    background: var(--surface-2);
+}
+
+.track-row.active {
+    background: var(--surface-3);
+    box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.track-swatch {
+    display: inline-block;
+    width: 10px;
+    height: 10px;
+    margin-right: 0.4rem;
+    border-radius: 2px;
 }

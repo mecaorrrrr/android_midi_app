@@ -4,6 +4,7 @@ import { AudioManager } from './audio.js';
 import { TransportManager } from './transport.js';
 import { Scheduler } from './scheduler.js';
 import { SongView } from './song_view.js';
+import { loadTheme, trackColor } from './theme.js';
 import {
     createSong, SONG_VERSION, getPattern, patternsOfTrack, createPattern, addClip,
     clipAt, forEachSongNote, flattenTrack, songEnd
@@ -15,6 +16,7 @@ console.log("Initializing Android MIDI App...");
 
 class App {
     constructor() {
+        loadTheme();
         this.songData = createSong();
 
         // Views: 'song' (arrangement) or 'pattern' (piano roll of one pattern)
@@ -48,14 +50,16 @@ class App {
             this.audio.resume();
         }, { once: true });
 
-        // File Loading
-        this.setupFileMenu();
+        this.setupMenus();
+        this.setupTransportButtons();
+        this.setupDialog();
         this.setupMappingModal();
         this.setupTrackListModal();
 
         // SFZ Input
         document.getElementById('sfz-file-input').addEventListener('change', async (e) => {
             if (e.target.files.length > 0) {
+                this.audio.init();
                 document.getElementById('status-display').textContent = "Loading SFZ...";
                 const success = await this.audio.loadSFZ(e.target.files);
                 document.getElementById('status-display').textContent = success ? "SFZ Loaded" : "Load Failed";
@@ -64,6 +68,7 @@ class App {
                 presetSel.innerHTML = '<option value="">-- SFZ Mode --</option>';
                 presetSel.disabled = true;
             }
+            e.target.value = ''; // Allow loading the same folder again
         });
 
         // SF2 File Loading
@@ -79,6 +84,7 @@ class App {
                     document.getElementById('status-display').textContent = "SF2 Load Failed";
                 }
             }
+            e.target.value = '';
         });
 
         document.getElementById('preset-selector').addEventListener('change', (e) => {
@@ -110,6 +116,7 @@ class App {
             if (e.target.files.length > 0) {
                 this.loadProject(e.target.files[0]);
             }
+            e.target.value = '';
         });
 
         // Transport
@@ -370,205 +377,119 @@ class App {
     }
 
     showToast(message) {
-        let toast = document.getElementById('toast-notification');
-        if (!toast) {
-            toast = document.createElement('div');
-            toast.id = 'toast-notification';
-            Object.assign(toast.style, {
-                position: 'fixed',
-                bottom: '100px',
-                left: '50%',
-                transform: 'translateX(-50%)',
-                backgroundColor: 'rgba(45, 52, 54, 0.9)',
-                color: '#fff',
-                padding: '10px 20px',
-                borderRadius: '20px',
-                zIndex: '2000',
-                transition: 'opacity 0.3s',
-                pointerEvents: 'none',
-                opacity: '0'
-            });
-            document.body.appendChild(toast);
-        }
+        const toast = document.getElementById('toast');
         toast.textContent = message;
-        toast.style.opacity = '1';
+        toast.classList.add('show');
         if (this.toastTimer) clearTimeout(this.toastTimer);
-        this.toastTimer = setTimeout(() => {
-            toast.style.opacity = '0';
-        }, 1500);
+        this.toastTimer = setTimeout(() => toast.classList.remove('show'), 1500);
+    }
+
+    // ---------------------------------------------------------------- Dialog
+
+    setupDialog() {
+        this.dialogResolve = null;
+        const input = document.getElementById('dialog-input');
+        document.getElementById('dialog-ok').addEventListener('click', () => this.closeDialog(true));
+        document.getElementById('dialog-cancel').addEventListener('click', () => this.closeDialog(false));
+        input.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') this.closeDialog(true);
+            if (e.key === 'Escape') this.closeDialog(false);
+        });
+    }
+
+    get isDialogOpen() {
+        return this.dialogResolve !== null;
+    }
+
+    /**
+     * Themed replacement for alert / confirm / prompt.
+     * options: { title, message, input (default text, omit for no input), cancel (show Cancel) }
+     * Resolves to the entered text (prompt), true (confirm/alert OK) or null (cancelled).
+     */
+    showDialog({ title, message = '', input = null, cancel = true }) {
+        if (this.isDialogOpen) this.closeDialog(false);
+        document.getElementById('dialog-title').textContent = title;
+        const messageEl = document.getElementById('dialog-message');
+        messageEl.textContent = message;
+        messageEl.hidden = !message;
+        const inputEl = document.getElementById('dialog-input');
+        inputEl.hidden = input === null;
+        inputEl.value = input === null ? '' : String(input);
+        document.getElementById('dialog-cancel').hidden = !cancel;
+        document.getElementById('dialog').classList.add('open');
+        if (input !== null) {
+            inputEl.focus();
+            inputEl.select();
+        }
+        return new Promise(resolve => {
+            this.dialogResolve = (ok) => resolve(ok ? (input === null ? true : inputEl.value) : null);
+        });
+    }
+
+    closeDialog(ok) {
+        if (!this.isDialogOpen) return;
+        const resolve = this.dialogResolve;
+        this.dialogResolve = null;
+        document.getElementById('dialog').classList.remove('open');
+        resolve(ok);
+    }
+
+    showAlert(title, message) {
+        return this.showDialog({ title, message, cancel: false });
     }
 
     resize() {
         this.ui.resize();
     }
 
-    setupFileMenu() {
-        // Hide legacy buttons
-        const ids = ['btn-play', 'btn-stop', 'btn-save', 'btn-load', 'btn-export', 'btn-load-sfz', 'btn-load-sf2', 'btn-add-marker', 'btn-add-bpm', 'btn-add-ts'];
-        ids.forEach(id => {
-            const el = document.getElementById(id);
-            if (el) el.style.display = 'none';
+    // FILE / ADD dropdowns: .menu elements with [data-menu-toggle] and [data-action] items
+    setupMenus() {
+        const menus = document.querySelectorAll('.menu');
+        const closeAll = () => menus.forEach(m => m.classList.remove('open'));
+
+        menus.forEach(menu => {
+            menu.querySelector('[data-menu-toggle]').addEventListener('click', (e) => {
+                e.stopPropagation();
+                const wasOpen = menu.classList.contains('open');
+                closeAll();
+                menu.classList.toggle('open', !wasOpen);
+            });
         });
+        document.addEventListener('click', closeAll);
 
-        // Create Container for Menu if not exists
-        let menuContainer = document.getElementById('menu-container');
-        if (!menuContainer) {
-            const status = document.getElementById('status-display');
-            if (status && status.parentElement) {
-                menuContainer = document.createElement('div');
-                menuContainer.id = 'menu-container';
-                menuContainer.style.display = 'inline-block';
-                menuContainer.style.marginRight = '10px';
-                status.parentElement.insertBefore(menuContainer, status);
-            } else {
-                menuContainer = document.body;
-            }
-        }
-
-        // FILE Button
-        const fileBtn = document.createElement('button');
-        fileBtn.textContent = 'FILE';
-        fileBtn.className = 'control-btn'; // Use existing class if available
-        fileBtn.style.fontWeight = 'bold';
-        
-        // Ribbon (Dropdown)
-        const ribbon = document.createElement('div');
-        ribbon.style.display = 'none';
-        ribbon.style.position = 'absolute';
-        ribbon.style.backgroundColor = '#2d3436';
-        ribbon.style.border = '1px solid #555';
-        ribbon.style.padding = '5px';
-        ribbon.style.zIndex = '1000';
-        ribbon.style.flexDirection = 'column';
-        ribbon.style.gap = '5px';
-        ribbon.style.minWidth = '120px';
-        ribbon.style.borderRadius = '4px';
-
-        fileBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const isVisible = ribbon.style.display === 'flex';
-            ribbon.style.display = isVisible ? 'none' : 'flex';
-            
-            const rect = fileBtn.getBoundingClientRect();
-            ribbon.style.top = `${rect.bottom + window.scrollY + 5}px`;
-            ribbon.style.left = `${rect.left + window.scrollX}px`;
-        });
-
-        document.addEventListener('click', () => {
-            ribbon.style.display = 'none';
-        });
-
-        const addMenuItem = (text, onClick) => {
-            const item = document.createElement('button');
-            item.textContent = text;
-            item.className = 'control-btn';
-            item.style.width = '100%';
-            item.style.textAlign = 'left';
-            item.style.marginBottom = '2px';
-            item.addEventListener('click', onClick);
-            ribbon.appendChild(item);
+        const actions = {
+            'save': () => this.saveProject(),
+            'load': () => document.getElementById('file-input-project').click(),
+            'export-midi': () => this.exportMIDI(),
+            'load-sf2': () => document.getElementById('sf2-file-input').click(),
+            'load-sfz': () => document.getElementById('sfz-file-input').click(),
+            'controller-map': () => this.openMappingModal(),
+            'add-marker': () => this.addMarker(),
+            'add-bpm': () => this.addBpm(),
+            'add-timesig': () => this.addTimeSig()
         };
-
-        addMenuItem('Save', () => this.saveProject());
-        addMenuItem('Load', () => document.getElementById('file-input-project').click());
-        addMenuItem('Export MIDI', () => this.exportMIDI());
-        addMenuItem('SFZ', () => document.getElementById('sfz-file-input').click());
-        addMenuItem('SF2', () => document.getElementById('sf2-file-input').click());
-        addMenuItem('Controller Map', () => this.openMappingModal());
-
-        menuContainer.appendChild(fileBtn);
-        document.body.appendChild(ribbon);
-
-        // ADD Menu (similar to FILE menu)
-        this.setupAddMenu();
+        document.querySelectorAll('.menu-item[data-action]').forEach(item => {
+            item.addEventListener('click', () => {
+                closeAll();
+                actions[item.dataset.action]();
+            });
+        });
     }
 
-    setupAddMenu() {
-        // Create marker navigation container (left of ADD button)
-        const navContainer = document.createElement('div');
-        navContainer.style.display = 'inline-flex';
-        navContainer.style.gap = '2px';
-        navContainer.style.marginRight = '5px';
-        navContainer.style.alignItems = 'center';
-
-        const markerLabel = document.createElement('span');
-        markerLabel.textContent = 'Marker ';
-        markerLabel.style.color = '#b2bec3';
-        markerLabel.style.fontSize = '14px';
-        markerLabel.style.marginRight = '4px';
-        navContainer.appendChild(markerLabel);
-        
-        const prevBtn = document.createElement('button');
-        prevBtn.textContent = '◀';
-        prevBtn.className = 'control-btn';
-        prevBtn.title = 'Previous Marker';
-        prevBtn.addEventListener('click', () => this.navigateToPrevMarker());
-        
-        const nextBtn = document.createElement('button');
-        nextBtn.textContent = '▶';
-        nextBtn.className = 'control-btn';
-        nextBtn.title = 'Next Marker';
-        nextBtn.addEventListener('click', () => this.navigateToNextMarker());
-        
-        navContainer.appendChild(prevBtn);
-        navContainer.appendChild(nextBtn);
-        
-        // Create ADD Button
-        const addBtn = document.createElement('button');
-        addBtn.textContent = 'ADD';
-        addBtn.className = 'control-btn';
-        addBtn.style.fontWeight = 'bold';
-        
-        // Ribbon (Dropdown)
-        const ribbon = document.createElement('div');
-        ribbon.style.display = 'none';
-        ribbon.style.position = 'absolute';
-        ribbon.style.backgroundColor = '#2d3436';
-        ribbon.style.border = '1px solid #555';
-        ribbon.style.padding = '5px';
-        ribbon.style.zIndex = '1000';
-        ribbon.style.flexDirection = 'column';
-        ribbon.style.gap = '5px';
-        ribbon.style.minWidth = '120px';
-        ribbon.style.borderRadius = '4px';
-
-        addBtn.addEventListener('click', (e) => {
-            e.stopPropagation();
-            const isVisible = ribbon.style.display === 'flex';
-            ribbon.style.display = isVisible ? 'none' : 'flex';
-            
-            const rect = addBtn.getBoundingClientRect();
-            ribbon.style.top = `${rect.bottom + window.scrollY + 5}px`;
-            ribbon.style.left = `${rect.left + window.scrollX}px`;
+    setupTransportButtons() {
+        document.getElementById('btn-play').addEventListener('click', () => this.togglePlayback(this.getPlayStartBeat()));
+        document.getElementById('btn-stop').addEventListener('click', () => {
+            if (this.isPlaying) this.togglePlayback(0);
         });
+        document.getElementById('btn-marker-prev').addEventListener('click', () => this.navigateToPrevMarker());
+        document.getElementById('btn-marker-next').addEventListener('click', () => this.navigateToNextMarker());
+    }
 
-        document.addEventListener('click', () => {
-            ribbon.style.display = 'none';
-        });
-
-        const addMenuItem = (text, onClick) => {
-            const item = document.createElement('button');
-            item.textContent = text;
-            item.className = 'control-btn';
-            item.style.width = '100%';
-            item.style.textAlign = 'left';
-            item.style.marginBottom = '2px';
-            item.addEventListener('click', onClick);
-            ribbon.appendChild(item);
-        };
-
-        addMenuItem('Marker', () => this.addMarker());
-        addMenuItem('BPM', () => this.addBpm());
-        addMenuItem('Time Sig', () => this.addTimeSig());
-
-        // Insert before preset selector
-        const presetSel = document.getElementById('preset-selector');
-        if (presetSel && presetSel.parentElement) {
-            // Insert navigation first, then ADD button
-            presetSel.parentElement.insertBefore(navContainer, presetSel);
-            presetSel.parentElement.insertBefore(addBtn, presetSel);
+    updateTransportUI() {
+        const playBtn = document.getElementById('btn-play');
+        if (playBtn.classList.contains('active') !== this.isPlaying) {
+            playBtn.classList.toggle('active', this.isPlaying);
         }
-        document.body.appendChild(ribbon);
     }
 
     addMarker() {
@@ -581,38 +502,33 @@ class App {
         }
     }
 
-    addBpm() {
+    async addBpm() {
         const cursorTime = this.getSongCursorBeat();
         const currentBpm = this.transport.getBpmAt(cursorTime);
         const targetTime = Math.round(cursorTime * 100) / 100;
 
-        const val = prompt(`Enter BPM at ${targetTime}:`, currentBpm);
-        if (val) {
-            const bpm = parseFloat(val);
-            if (!isNaN(bpm) && bpm > 0) {
-                this.transport.addTempoChange(targetTime, bpm);
-                alert(`Added BPM change to ${bpm} at beat ${targetTime}`);
-            }
+        const val = await this.showDialog({ title: 'Tempo Change', message: `BPM at beat ${targetTime}`, input: currentBpm });
+        if (val === null) return;
+        const bpm = parseFloat(val);
+        if (!isNaN(bpm) && bpm > 0) {
+            this.transport.addTempoChange(targetTime, bpm);
+            this.showToast(`BPM ${bpm} at beat ${targetTime}`);
         }
     }
 
-    addTimeSig() {
+    async addTimeSig() {
         const cursorTime = this.getSongCursorBeat();
-        const context = this.transport.getMeasureAt(cursorTime);
-        const currentTs = context.timeSig;
+        const currentTs = this.transport.getMeasureAt(cursorTime).timeSig;
         const targetTime = Math.round(cursorTime * 100) / 100;
 
-        const val = prompt(`Enter Time Signature (num/den) at ${targetTime}:`, `${currentTs.num}/${currentTs.den}`);
-        if (val) {
-            const parts = val.split('/');
-            if (parts.length === 2) {
-                const num = parseInt(parts[0]);
-                const den = parseInt(parts[1]);
-                if (!isNaN(num) && !isNaN(den)) {
-                    this.transport.addTimeSigChange(targetTime, num, den);
-                    alert(`Added Time Sig change to ${num}/${den} at beat ${targetTime}`);
-                }
-            }
+        const val = await this.showDialog({
+            title: 'Time Signature', message: `num/den at beat ${targetTime}`, input: `${currentTs.num}/${currentTs.den}`
+        });
+        if (val === null) return;
+        const [num, den] = val.split('/').map(v => parseInt(v));
+        if (!isNaN(num) && !isNaN(den)) {
+            this.transport.addTimeSigChange(targetTime, num, den);
+            this.showToast(`Time Sig ${num}/${den} at beat ${targetTime}`);
         }
     }
 
@@ -640,16 +556,12 @@ class App {
 
     setupMappingModal() {
         const modal = document.getElementById('mapping-modal');
-        const closeBtn = document.getElementById('btn-close-mapping');
-        const resetBtn = document.getElementById('btn-reset-mapping');
-
-        closeBtn.addEventListener('click', () => {
-            modal.style.display = 'none';
+        document.getElementById('btn-close-mapping').addEventListener('click', () => {
+            modal.classList.remove('open');
             this.input.isMapping = false; // Cancel mapping if open
         });
-
-        resetBtn.addEventListener('click', () => {
-            if (confirm('Reset all button mappings to default?')) {
+        document.getElementById('btn-reset-mapping').addEventListener('click', async () => {
+            if (await this.showDialog({ title: 'Reset Mapping', message: 'Reset all button mappings to default?' })) {
                 this.input.resetMapping();
                 this.updateMappingUI();
             }
@@ -657,8 +569,7 @@ class App {
     }
 
     openMappingModal() {
-        const modal = document.getElementById('mapping-modal');
-        modal.style.display = 'flex';
+        document.getElementById('mapping-modal').classList.add('open');
         this.updateMappingUI();
     }
 
@@ -679,7 +590,7 @@ class App {
             label.textContent = key;
             
             const btn = document.createElement('button');
-            btn.className = 'mapping-btn';
+            btn.className = 'btn small';
             btn.textContent = `Btn ${val}`;
             btn.onclick = () => {
                 btn.textContent = 'Press...';
@@ -704,15 +615,9 @@ class App {
     }
 
     toggleTrackListModal(show) {
-        const modal = document.getElementById('track-list-modal');
-        if (show) {
-            this.updateTrackListUI();
-            modal.style.display = 'flex';
-            this.isTrackListOpen = true;
-        } else {
-            modal.style.display = 'none';
-            this.isTrackListOpen = false;
-        }
+        if (show) this.updateTrackListUI();
+        document.getElementById('track-list-modal').classList.toggle('open', show);
+        this.isTrackListOpen = show;
     }
 
     updateTrackListUI() {
@@ -729,13 +634,13 @@ class App {
             const instrumentName = this.getInstrumentName(track);
 
             tr.innerHTML = `
-                <td>${track.id + 1}</td>
+                <td><span class="track-swatch" style="background: ${trackColor(track.id)}"></span>${track.id + 1}</td>
                 <td>${track.name}</td>
                 <td>${instrumentName}</td>
                 <td>${Math.round(track.volume * 100)}%</td>
                 <td>${track.pan.toFixed(1)}</td>
-                <td><button class="track-btn ${track.solo ? 'active' : ''}" data-action="solo">Solo</button></td>
-                <td><button class="track-btn ${track.muted ? 'active-mute' : ''}" data-action="mute">Mute</button></td>
+                <td><button class="btn small success ${track.solo ? 'active' : ''}" data-action="solo">Solo</button></td>
+                <td><button class="btn small danger ${track.muted ? 'active' : ''}" data-action="mute">Mute</button></td>
             `;
 
             tr.addEventListener('click', () => {
@@ -875,6 +780,7 @@ class App {
             }
         }
 
+        this.updateTransportUI();
         if (this.view === 'song') {
             this.songView.draw(this.cardinalTime);
         } else {
@@ -912,7 +818,7 @@ class App {
             try {
                 const project = JSON.parse(e.target.result);
                 if (project.version !== SONG_VERSION || !project.songData || !project.songData.patterns) {
-                    alert('This project file uses an old format and cannot be loaded.');
+                    this.showAlert('Load Project', 'This project file uses an old format and cannot be loaded.');
                     return;
                 }
 
@@ -959,11 +865,11 @@ class App {
                 this.updateTrackUI();
 
                 console.log("Project loaded");
-                alert("Project loaded successfully.");
+                this.showToast('Project loaded');
 
             } catch (err) {
                 console.error("Failed to load project", err);
-                alert("Failed to load project: " + err.message);
+                this.showAlert('Load Project', 'Failed to load project: ' + err.message);
             }
         };
         reader.readAsText(file);
