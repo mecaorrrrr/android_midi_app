@@ -489,3 +489,172 @@ canvas {
     margin-right: 0.4rem;
     border-radius: 2px;
 }
+
+/* ------------------------------------------------------------ Tone editor */
+.modal-content.tone-editor {
+    max-width: 700px;
+}
+
+.tone-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.5rem;
+}
+
+.tone-header h2 {
+    margin-bottom: 0;
+}
+
+.tone-track {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    color: var(--text-muted);
+    font-size: 0.85rem;
+}
+
+.tone-track .track-swatch {
+    margin-right: 0;
+}
+
+.btn.icon.small {
+    width: 26px;
+}
+
+.tone-body {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1.25rem 2rem;
+}
+
+.tone-section h3 {
+    margin-bottom: 0.5rem;
+    color: var(--text-muted);
+    font-size: 1rem;
+    font-weight: 300;
+    text-align: center;
+}
+
+.tone-controls {
+    display: flex;
+    justify-content: center;
+    gap: 0.75rem;
+}
+
+.tone-control {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.1rem;
+    padding: 0.35rem 0.5rem;
+    border: 1px solid transparent;
+    border-radius: var(--radius);
+    cursor: ns-resize;
+    touch-action: none;
+}
+
+.tone-control.focused {
+    border-color: var(--accent);
+    background: var(--surface-2);
+}
+
+.tone-label {
+    color: var(--text-muted);
+    font-size: 0.75rem;
+}
+
+.tone-value {
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+}
+
+.tone-control.modified .tone-value,
+.tone-control.modified .tone-number {
+    color: var(--accent-hover);
+}
+
+.tone-number {
+    min-width: 2.5ch;
+    font-size: 3rem;
+    font-weight: 300;
+    line-height: 1.1;
+    text-align: center;
+}
+
+.knob {
+    width: 64px;
+    height: 64px;
+}
+
+.knob-track,
+.knob-fill {
+    fill: none;
+    stroke-width: 8;
+    stroke-linecap: round;
+}
+
+.knob-track {
+    stroke: var(--border-strong);
+}
+
+.knob-fill {
+    stroke: var(--text-muted);
+}
+
+.tone-control.focused .knob-fill {
+    stroke: var(--accent);
+}
+
+.knob-pointer {
+    stroke: var(--text);
+    stroke-width: 3;
+    stroke-linecap: round;
+}
+
+.env-graph {
+    display: block;
+    width: 100%;
+    height: 100px;
+    overflow: visible;
+}
+
+.env-axis {
+    stroke: var(--text-dim);
+    stroke-width: 1.5;
+}
+
+.env-line {
+    fill: none;
+    stroke: var(--text);
+    stroke-width: 1.5;
+    stroke-linejoin: round;
+    vector-effect: non-scaling-stroke;
+}
+
+.env-highlight {
+    fill: var(--accent);
+    opacity: 0.3;
+}
+
+.env-controls {
+    display: flex;
+    justify-content: space-around;
+    margin-top: 0.25rem;
+}
+
+.env-control {
+    min-width: 3.2rem;
+}
+
+.tone-hint {
+    margin: 0 auto 0 0;
+    align-self: center;
+}
+
+@media (max-width: 640px) {
+    .tone-body {
+        grid-template-columns: 1fr;
+    }
+}

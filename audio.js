@@ -1,13 +1,62 @@
 import { WorkletSynthesizer } from './vendor/spessasynth/spessasynth_lib.min.js';
+import { DEFAULT_TONE } from './song.js';
 
 const TRACK_COUNT = 8;
 const PROCESSOR_URL = new URL('./vendor/spessasynth/spessasynth_processor.min.js', import.meta.url);
 
 // MIDI CC numbers
 const CC_BANK_MSB = 0;
+const CC_DATA_ENTRY_MSB = 6;
 const CC_VOLUME = 7;
 const CC_PAN = 10;
 const CC_BANK_LSB = 32;
+const CC_DATA_ENTRY_LSB = 38;
+const CC_RESONANCE = 71;
+const CC_RELEASE = 72;
+const CC_ATTACK = 73;
+const CC_CUTOFF = 74;
+const CC_DECAY = 75;
+const CC_REVERB = 91;
+const CC_CHORUS = 93;
+const CC_DELAY = 94;
+const CC_NRPN_LSB = 98;
+const CC_NRPN_MSB = 99;
+const CC_RPN_LSB = 100;
+const CC_RPN_MSB = 101;
+
+const NRPN_SF2 = 120;            // SoundFont 2.01 NRPN: per-channel generator offsets
+const GEN_SUSTAIN_VOL_ENV = 37;  // sustainVolEnv (attenuation in centibels)
+const SUSTAIN_CB_PER_STEP = 15;  // Tone sustain -64..63 -> about +-96 dB
+const RPN_FINE_TUNING = 1;
+const RPN_COARSE_TUNING = 2;
+
+/**
+ * MIDI messages (channel-less [controller, value] pairs) that apply a track tone.
+ * Shared by the live synth and the MIDI file export so both sound the same.
+ */
+export function toneControllerMessages(tone) {
+    const t = { ...DEFAULT_TONE, ...tone };
+    const rel = (v) => clamp7(64 + Math.round(v));
+    const param = (msbCC, lsbCC, msb, lsb, value14) => [
+        [msbCC, msb], [lsbCC, lsb],
+        [CC_DATA_ENTRY_MSB, (value14 >> 7) & 127], [CC_DATA_ENTRY_LSB, value14 & 127]
+    ];
+    const clamp14 = (v) => Math.max(0, Math.min(16383, Math.round(v)));
+    return [
+        [CC_ATTACK, rel(t.attack)],
+        [CC_DECAY, rel(t.decay)],
+        [CC_RELEASE, rel(t.release)],
+        [CC_CUTOFF, rel(t.cutoff)],
+        [CC_RESONANCE, rel(t.resonance)],
+        [CC_REVERB, clamp7(t.reverb)],
+        [CC_CHORUS, clamp7(t.chorus)],
+        [CC_DELAY, clamp7(t.delay)],
+        ...param(CC_NRPN_MSB, CC_NRPN_LSB, NRPN_SF2, GEN_SUSTAIN_VOL_ENV, 8192 - t.sustain * SUSTAIN_CB_PER_STEP),
+        ...param(CC_RPN_MSB, CC_RPN_LSB, 0, RPN_COARSE_TUNING, (64 + t.transpose) << 7),
+        ...param(CC_RPN_MSB, CC_RPN_LSB, 0, RPN_FINE_TUNING, clamp14(8192 + t.fine * 81.92)),
+        [CC_RPN_MSB, 127], [CC_RPN_LSB, 127] // RPN null
+    ];
+}
 
 // Envelope used by the sine-wave fallback (seconds / 0..1 level)
 const OSC_ENVELOPE = { delay: 0, attack: 0.005, hold: 0, decay: 0.3, sustain: 0.6, release: 0.15 };
@@ -37,6 +86,7 @@ export class AudioManager {
         this.voices = new Set(); // Active Web Audio voices: { source, gain }
 
         this.trackMix = Array.from({ length: TRACK_COUNT }, () => ({ volume: 0.8, pan: 0 }));
+        this.trackTones = Array.from({ length: TRACK_COUNT }, () => ({ ...DEFAULT_TONE }));
         this.trackInstruments = Array.from({ length: TRACK_COUNT }, () => ({
             bank: 0,
             program: 0,
@@ -79,7 +129,10 @@ export class AudioManager {
         await synth.isReady;
         synth.setLogLevel(false, true, false);
         this.synth = synth;
-        for (let i = 0; i < TRACK_COUNT; i++) this.applyTrackMix(i);
+        for (let i = 0; i < TRACK_COUNT; i++) {
+            this.applyTrackMix(i);
+            this.applyTone(i);
+        }
     }
 
     resume() {
@@ -112,6 +165,21 @@ export class AudioManager {
         if (this.synth) {
             this.synth.controllerChange(trackId, CC_VOLUME, clamp7(Math.round(volume * 127)));
             this.synth.controllerChange(trackId, CC_PAN, clamp7(Math.round((pan + 1) * 64)));
+        }
+    }
+
+    // ----------------------------------------------------------------- Tone
+
+    setTrackTone(trackId, tone) {
+        if (!this.trackTones[trackId]) return;
+        this.trackTones[trackId] = { ...DEFAULT_TONE, ...tone };
+        this.applyTone(trackId);
+    }
+
+    applyTone(trackId) {
+        if (!this.synth) return;
+        for (const [cc, value] of toneControllerMessages(this.trackTones[trackId])) {
+            this.synth.controllerChange(trackId, cc, value);
         }
     }
 
@@ -152,6 +220,7 @@ export class AudioManager {
             for (let i = 0; i < TRACK_COUNT; i++) {
                 this.trackInstruments[i] = { bank: this.presets[0].bank, program: this.presets[0].preset, presetIndex: 0 };
                 this.applyInstrument(i);
+                this.applyTone(i);
             }
             return true;
         } catch (e) {
@@ -257,11 +326,13 @@ export class AudioManager {
     }
 
     playOscillator(trackId, midi, velocity, startTime, endTime) {
+        const tone = this.trackTones[trackId];
         const osc = this.ctx.createOscillator();
         osc.type = 'sine';
         osc.frequency.value = midiToFreq(midi);
+        osc.detune.value = tone.transpose * 100 + tone.fine;
         const peak = (velocity / 127) * 0.4;
-        this.startVoice(osc, trackId, peak, OSC_ENVELOPE, startTime, endTime);
+        this.startVoice(osc, trackId, peak, applyToneToEnvelope(OSC_ENVELOPE, tone), startTime, endTime);
     }
 
     // Connect a source through an ADSR gain to the track and schedule start/stop
@@ -404,8 +475,10 @@ export class AudioManager {
         const rootKey = region.pitch_keycenter !== undefined ? region.pitch_keycenter
             : (region.key !== undefined ? region.key : 60);
         const keytrack = region.pitch_keytrack !== undefined ? region.pitch_keytrack : 100;
+        const tone = this.trackTones[trackId];
         source.detune.value = (midi - rootKey) * keytrack
-            + (region.transpose || 0) * 100 + (region.tune || 0);
+            + (region.transpose || 0) * 100 + (region.tune || 0)
+            + tone.transpose * 100 + tone.fine;
 
         const loopMode = region.loop_mode || (region.loop_start !== undefined ? 'loop_continuous' : 'no_loop');
         if (loopMode === 'loop_continuous' || loopMode === 'loop_sustain') {
@@ -424,14 +497,14 @@ export class AudioManager {
         const velGain = 1 - veltrack + veltrack * (velocity / 127) ** 2;
         const peak = velGain * dbToGain(region.volume || 0);
 
-        const env = {
+        const env = applyToneToEnvelope({
             delay: region.ampeg_delay || 0,
             attack: region.ampeg_attack || 0.001,
             hold: region.ampeg_hold || 0,
             decay: region.ampeg_decay || 0,
             sustain: region.ampeg_sustain !== undefined ? region.ampeg_sustain / 100 : 1,
             release: Math.max(region.ampeg_release || 0.01, 0.01)
-        };
+        }, tone);
 
         // one_shot plays the whole sample regardless of note length
         if (loopMode === 'one_shot') {
@@ -439,6 +512,18 @@ export class AudioManager {
         }
         this.startVoice(source, trackId, peak, env, startTime, endTime);
     }
+}
+
+// Relative tone edits for the Web Audio path: +-64 scales times by up to x8 / /8
+function applyToneToEnvelope(env, tone) {
+    const scale = (v) => Math.pow(2, v / 21);
+    return {
+        ...env,
+        attack: Math.max(0.001, env.attack * scale(tone.attack)),
+        decay: env.decay * scale(tone.decay),
+        sustain: Math.max(0, Math.min(1, env.sustain + tone.sustain / 64)),
+        release: Math.max(0.01, env.release * scale(tone.release))
+    };
 }
 
 /**

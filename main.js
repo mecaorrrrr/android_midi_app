@@ -1,12 +1,13 @@
 import { UIManager } from './ui.js';
 import { InputManager } from './input.js';
-import { AudioManager } from './audio.js';
+import { AudioManager, toneControllerMessages } from './audio.js';
 import { TransportManager } from './transport.js';
 import { Scheduler } from './scheduler.js';
 import { SongView } from './song_view.js';
 import { loadTheme, trackColor } from './theme.js';
+import { ToneEditor } from './tone_editor.js';
 import {
-    createSong, SONG_VERSION, getPattern, patternsOfTrack, createPattern, addClip,
+    createSong, normalizeSong, SONG_VERSION, getPattern, patternsOfTrack, createPattern, addClip,
     clipAt, forEachSongNote, flattenTrack, songEnd
 } from './song.js';
 
@@ -40,6 +41,7 @@ class App {
         this.songView = new SongView(this);
         this.audio = new AudioManager();
         this.input = new InputManager(this);
+        this.toneEditor = new ToneEditor(this);
 
         this.resize();
         window.addEventListener('resize', () => this.resize());
@@ -159,8 +161,19 @@ class App {
         this.openPattern(pattern.id, 0);
     }
 
+    // Push volume / pan / tone of every track to the audio engine
+    applyAllTrackSettings() {
+        for (const track of this.songData.tracks) {
+            this.audio.setTrackVolume(track.id, track.volume);
+            this.audio.setTrackPan(track.id, track.pan);
+            this.audio.setTrackTone(track.id, track.tone);
+        }
+    }
+
     // Called after undo/redo replaced songData with a copy
     afterSongDataReplaced() {
+        this.applyAllTrackSettings();
+        if (this.toneEditor.isOpen) this.toneEditor.render();
         this.input.clearSelection();
         this.input.song.clearSelection();
         if (this.view === 'pattern' && !this.currentPattern) {
@@ -483,6 +496,7 @@ class App {
         });
         document.getElementById('btn-marker-prev').addEventListener('click', () => this.navigateToPrevMarker());
         document.getElementById('btn-marker-next').addEventListener('click', () => this.navigateToNextMarker());
+        document.getElementById('btn-tone').addEventListener('click', () => this.toneEditor.open());
     }
 
     updateTransportUI() {
@@ -641,6 +655,7 @@ class App {
                 <td>${track.pan.toFixed(1)}</td>
                 <td><button class="btn small success ${track.solo ? 'active' : ''}" data-action="solo">Solo</button></td>
                 <td><button class="btn small danger ${track.muted ? 'active' : ''}" data-action="mute">Mute</button></td>
+                <td><button class="btn small" data-action="tone">Edit</button></td>
             `;
 
             tr.addEventListener('click', () => {
@@ -658,6 +673,12 @@ class App {
                 e.stopPropagation();
                 track.muted = !track.muted;
                 this.updateTrackListUI();
+            });
+
+            tr.querySelector('[data-action="tone"]').addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.toggleTrackListModal(false);
+                this.toneEditor.open(track.id);
             });
 
             tbody.appendChild(tr);
@@ -826,7 +847,7 @@ class App {
                 if (this.isPlaying) this.stopPlayback();
                 this.undoStack = [];
                 this.redoStack = [];
-                this.songData = project.songData;
+                this.songData = normalizeSong(project.songData);
                 this.currentTrackId = 0;
                 this.currentPatternId = null;
                 this.lastPatternByTrack = {};
@@ -852,11 +873,7 @@ class App {
                     });
                 }
 
-                // Apply mixer settings
-                this.songData.tracks.forEach(t => {
-                    this.audio.setTrackVolume(t.id, t.volume);
-                    this.audio.setTrackPan(t.id, t.pan);
-                });
+                this.applyAllTrackSettings();
 
                 // Reset State
                 this.cardinalTime = 0;
@@ -929,6 +946,11 @@ class App {
             // Program Change
             const prog = trackData.program || 0;
             encoder.addEvent(track, 0, [0xC0 | ch, prog]);
+
+            // Tone edits (same messages the live synth receives)
+            for (const [cc, value] of toneControllerMessages(trackData.tone)) {
+                encoder.addEvent(track, 0, [0xB0 | ch, cc, value]);
+            }
 
             // Notes
             for (const note of flattenTrack(this.songData, trackData.id)) {

@@ -39,6 +39,7 @@
                 <select id="preset-selector" class="select" disabled title="Instrument of the current track">
                     <option value="">-- No SF2 --</option>
                 </select>
+                <button id="btn-tone" class="btn" title="Tone Editor (START + Y)">TONE</button>
 
                 <div class="menu">
                     <button class="btn" data-menu-toggle>ADD ▾</button>
@@ -98,6 +99,28 @@
         </div>
     </div>
 
+    <!-- Tone editor (content is built by tone_editor.js) -->
+    <div id="tone-modal" class="modal">
+        <div class="modal-content tone-editor">
+            <div class="tone-header">
+                <h2>Tone Editor</h2>
+                <div class="tone-track">
+                    <button class="btn icon small" data-tone-prev title="Previous track (L1)">◀</button>
+                    <span class="track-swatch tone-track-swatch"></span>
+                    <span class="tone-track-name"></span>
+                    <button class="btn icon small" data-tone-next title="Next track (R1)">▶</button>
+                </div>
+            </div>
+            <div class="tone-body"></div>
+            <div class="modal-actions">
+                <p class="modal-hint tone-hint">D-pad: select · A + D-pad: change (R2: fast) · Y: reset · X: preview · B: close</p>
+                <button class="btn" data-tone-reset-all>Reset All</button>
+                <button class="btn" data-tone-preview>Preview</button>
+                <button class="btn primary" data-tone-close>Close</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Controller mapping -->
     <div id="mapping-modal" class="modal">
         <div class="modal-content">
@@ -124,6 +147,7 @@
                         <th>Pan</th>
                         <th>Solo</th>
                         <th>Mute</th>
+                        <th>Tone</th>
                     </tr>
                 </thead>
                 <tbody id="track-list-body"></tbody>

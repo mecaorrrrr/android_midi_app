@@ -29,6 +29,7 @@ Android の Chrome での利用を主目的とし、PC ブラウザでも動作�
 | `song_view.js` | `SongView`。ソング画面（トラック×小節）の Canvas 描画とマウス操作。トラック色 `TRACK_COLORS` |
 | `song_input.js` | `SongInput`。ソング画面のゲームパッド操作（`InputManager` から呼ばれる） |
 | `ui.js` | `UIManager`。パターン画面（ピアノロール）の Canvas 描画。Canvas のサイズ/DPI 管理もここ（`SongView` は `app.ui.width/height` を使う） |
+| `tone_editor.js` | `ToneEditor`。トラックごとの音色編集モーダル（SVG のノブとエンベロープ図、ゲームパッドは画面上の位置で項目間を移動）。開いている間は `InputManager.handleToneEditor()` が全入力を渡す |
 | `input.js` | `InputManager`。Gamepad ポーリング、ボタンマッピング（localStorage `gamepad_mapping`）、共通ボタン（X/SELECT/START/L1/R1/L2）、ピアノロールの編集操作。ソング画面では `this.song`（`SongInput`）に委譲。**キーボード操作は未実装**（README の記載はあるがコードに無い） |
 | `audio.js` | `AudioManager`。SF2/SF3/DLS は spessasynth（AudioWorklet）で再生、SFZ は自前サンプラー、音源未ロード時はサイン波。全発音は `playNoteAt(trackId, pitch, vel, startTime, endTime)`（AudioContext 時刻）経由 |
 | `scheduler.js` | `Scheduler`。先読み（lookahead 0.12 秒）で `playNoteAt` に正確な時刻付きでノートを渡す。ループはセグメント（AudioContext 時刻↔拍の対応）を追加して処理 |
@@ -51,6 +52,7 @@ Android の Chrome での利用を主目的とし、PC ブラウザでも動作�
 - トラック数は 8 固定（`song.js` の `TRACK_COUNT`、`audio.js` にも同値の定数）。
 - **再生**: `App.startPlayback()` / `stopPlayback()` / `togglePlayback()` が入口。`App.loop()`（requestAnimationFrame）は毎フレーム `scheduler.update()` を呼び、`cardinalTime`（プレイヘッド）は `scheduler.currentBeat()` から AudioContext の時刻を基準に求める。スケジューラーは `app.forEachPlaybackNote()`（ソング画面=全クリップ、パターン画面=編集中パターン）と `app.getPlaybackLoop()` を使うので画面に依存しない。ミュート/ソロは予約時点で判定する（パターン画面ではミュート中でも鳴らす）。ソング画面はループ無しなら曲末で自動停止。
 - **発音（SF2）**: トラック N = MIDI チャンネル N。音量/パンは CC7/CC10、音色は Bank Select (CC0/CC32) + Program Change、ドラムは `midiChannels[N].setDrums(true)`（プリセット一覧では bank 128 として扱う）。ADSR・フィルター・モジュレーター等はすべて spessasynth が SF2 仕様どおりに処理する。
+- **トーン（`track.tone`）**: エンベロープ/フィルターは SoundFont の値からの**相対値**（-64..63、0 = プリセットのまま）。`audio.js` の `toneControllerMessages()` が標準 MIDI メッセージ（CC73/75/72 = A/D/R、CC74/71 = Cutoff/Resonance、CC91/93/94 = Reverb/Chorus/Delay、SF2 NRPN 120 で sustainVolEnv のオフセット、RPN 2/1 = Transpose/Fine）に変換し、ライブ再生と MIDI 書き出しの両方で同じものを使う。SFZ/サイン波ではエンベロープと Tune のみ `applyToneToEnvelope()` と detune で近似。undo/読み込み後は `app.applyAllTrackSettings()` で音量・パン・トーンを再送する。古いプロジェクトの欠けたフィールドは `normalizeSong()` で補う。
 - **停止**: spessasynth の予約済みイベントは取り消せないため、`AudioManager.stopAll()` は未来の noteOn と同時刻に noteOff を送って打ち消し、そのうえで `synth.stopAll()` を呼ぶ。
 - **SFZ / サイン波**: Web Audio のトラック別 Gain→StereoPanner→Master 経路。`scheduleEnvelope()` で DAHDSR（SFZ は `ampeg_*`）を適用し、ノート終了後に release 分だけ余韻が鳴る。
 - **GUI の決まり**: 色・フォントは `style.css` の `:root` トークンだけで定義する。Canvas では `theme.js` 経由で参照し、JS/HTML に色コードやインライン `style` を直接書かない（トラック色のスウォッチのようなデータ由来の値は例外）。ボタンは `.btn`（`.icon` / `.primary` / `.small` / `.active`）、メニューは `.menu` + `[data-menu-toggle]` + `.menu-item[data-action]`（処理は `main.js` の `setupMenus()`）、モーダルは `.modal` に `.open` を付け外しする。

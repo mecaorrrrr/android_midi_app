@@ -209,6 +209,11 @@ export class InputManager {
         }
         this.waitForRelease = false;
 
+        if (this.app.toneEditor.isOpen) {
+            this.handleToneEditor(gp);
+            return;
+        }
+
         // D-PAD & Stick handling for Cursor Movement
         // Mapping (Standard Gamepad)
         // Axes 0,1: Left Stick
@@ -304,6 +309,18 @@ export class InputManager {
             this.app.audio.setTrackPan(this.app.currentTrackId, track.pan);
             this.updateStatus(`Pan: ${track.pan.toFixed(1)}`);
             this.startComboUsed = true;
+        }
+
+        // Tone editor (Y)
+        if (isPressed(map.Y) && !this.lastButtonState[map.Y]) {
+            this.app.toneEditor.open();
+            this.startComboUsed = true;
+            this.wasStartButtonHeld = true;
+            this.wasYButtonHeld = true; // Don't start a range selection with this Y
+            for (let i = 0; i < gp.buttons.length; i++) {
+                this.lastButtonState[i] = gp.buttons[i].pressed;
+            }
+            return;
         }
 
         // Solo (A)
@@ -591,6 +608,36 @@ export class InputManager {
             for (let i = 0; i < gp.buttons.length; i++) {
                 this.lastButtonState[i] = gp.buttons[i].pressed;
             }
+        }
+    }
+
+    // All gamepad input goes to the tone editor while it is open
+    handleToneEditor(gp) {
+        const DEADZONE = 0.5;
+        const map = this.buttonMap;
+        const held = (name) => !!(gp.buttons[map[name]] && gp.buttons[map[name]].pressed);
+        const edge = (name) => held(name) && !this.lastButtonState[map[name]];
+
+        let dx = 0;
+        let dy = 0;
+        if (held('LEFT') || gp.axes[0] < -DEADZONE) dx = -1;
+        if (held('RIGHT') || gp.axes[0] > DEADZONE) dx = 1;
+        if (held('UP') || gp.axes[1] < -DEADZONE) dy = 1;
+        if (held('DOWN') || gp.axes[1] > DEADZONE) dy = -1;
+
+        this.app.toneEditor.handleGamepad(edge, held, dx, dy);
+
+        for (let i = 0; i < gp.buttons.length; i++) {
+            this.lastButtonState[i] = gp.buttons[i].pressed;
+        }
+        if (!this.app.toneEditor.isOpen) {
+            // The button that closed the editor must not act in the editor view when released
+            this.waitForRelease = true;
+            this.lastButtonState[map.A] = false;
+            this.lastButtonState[map.B] = false;
+            this.wasStartButtonHeld = held('START');
+            this.startComboUsed = held('START');
+            this.repeatTimers = {};
         }
     }
 

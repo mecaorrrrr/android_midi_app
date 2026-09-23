@@ -4,7 +4,7 @@
 // songData = {
 //   version: 2,
 //   nextId,
-//   tracks:   [{ id, name, volume, pan, muted, solo, program, bank, presetIndex }],
+//   tracks:   [{ id, name, volume, pan, muted, solo, program, bank, presetIndex, tone }],
 //   patterns: [{ id, trackId, name, length, notes: [{ time, pitch, duration, velocity }] }],
 //   clips:    [{ id, trackId, patternId, start }]
 // }
@@ -12,6 +12,15 @@
 
 export const TRACK_COUNT = 8;
 export const SONG_VERSION = 2;
+
+// Per-track tone edits. Envelope / filter values are relative to the preset (0 = as is, -64..63),
+// transpose is in semitones, fine in cents, effect sends are 0..127.
+export const DEFAULT_TONE = {
+    attack: 0, decay: 0, sustain: 0, release: 0,
+    cutoff: 0, resonance: 0,
+    transpose: 0, fine: 0,
+    delay: 0, chorus: 0, reverb: 0
+};
 
 export function createSong() {
     return {
@@ -26,11 +35,20 @@ export function createSong() {
             solo: false,
             program: 0,
             bank: 0,
-            presetIndex: 0
+            presetIndex: 0,
+            tone: { ...DEFAULT_TONE }
         })),
         patterns: [],
         clips: []
     };
+}
+
+// Fills in fields added after a project was saved
+export function normalizeSong(song) {
+    for (const track of song.tracks) {
+        track.tone = { ...DEFAULT_TONE, ...(track.tone || {}) };
+    }
+    return song;
 }
 
 export function newId(song) {
