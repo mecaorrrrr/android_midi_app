@@ -8,7 +8,7 @@ export class Scheduler {
     constructor(app) {
         this.app = app;
         this.lookahead = 0.12;   // seconds scheduled ahead of the audio clock
-        this.startDelay = 0.05;  // seconds between pressing play and the first note
+        this.startDelay = 0.02;  // seconds between pressing play and the first note
         this.segments = [];
         this.scheduledBeat = 0;  // end of the already-scheduled range in the last segment
     }

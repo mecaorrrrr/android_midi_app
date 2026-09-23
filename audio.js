@@ -99,7 +99,7 @@ export class AudioManager {
         if (this.ctx) return;
 
         const AudioContext = window.AudioContext || window.webkitAudioContext;
-        this.ctx = new AudioContext();
+        this.ctx = new AudioContext({ latencyHint: 'interactive' });
         this.masterGain = this.ctx.createGain();
         this.masterGain.gain.value = 0.8;
         this.masterGain.connect(this.ctx.destination);
@@ -133,6 +133,12 @@ export class AudioManager {
             this.applyTrackMix(i);
             this.applyTone(i);
         }
+    }
+
+    // Delay between a sound being produced and it leaving the speakers (browser/OS/device), in ms
+    getOutputLatencyMs() {
+        if (!this.ctx) return null;
+        return Math.round(((this.ctx.baseLatency || 0) + (this.ctx.outputLatency || 0)) * 1000);
     }
 
     resume() {
@@ -290,7 +296,12 @@ export class AudioManager {
 
         if (this.hasSoundBank() && this.synth) {
             const now = this.ctx.currentTime;
-            this.synth.noteOn(trackId, midi, velocity, { time: startTime });
+            if (startTime <= now) {
+                // Immediate notes skip the synth's event queue (saves one render block)
+                this.synth.noteOn(trackId, midi, velocity);
+            } else {
+                this.synth.noteOn(trackId, midi, velocity, { time: startTime });
+            }
             this.synth.noteOff(trackId, midi, { time: endTime });
             this.pendingNoteOns = this.pendingNoteOns.filter(n => n.time > now);
             if (startTime > now) this.pendingNoteOns.push({ trackId, midi, time: startTime });

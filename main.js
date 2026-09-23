@@ -12,6 +12,7 @@ import {
 } from './song.js';
 
 const DEFAULT_PATTERN_BARS = 4;
+const INPUT_POLL_MS = 4;
 
 console.log("Initializing Android MIDI App...");
 
@@ -50,7 +51,11 @@ class App {
         document.body.addEventListener('click', () => {
             if (!this.audio.ctx) this.audio.init();
             this.audio.resume();
+            setTimeout(() => this.showAudioLatency(), 1000);
         }, { once: true });
+
+        // Poll the gamepad faster than the display refresh to cut input latency
+        setInterval(() => this.input.update(), INPUT_POLL_MS);
 
         this.setupMenus();
         this.setupTransportButtons();
@@ -338,6 +343,15 @@ class App {
         } else {
             label.textContent = '';
         }
+    }
+
+    // Shows the browser/OS output delay; large values usually mean Bluetooth audio or power saving
+    showAudioLatency() {
+        const ms = this.audio.getOutputLatencyMs();
+        if (ms === null) return;
+        const status = document.getElementById('status-display');
+        status.textContent = `Audio latency: ${ms} ms`;
+        status.title = 'Delay added by the browser, OS and output device. Wired speakers/headphones are usually faster than Bluetooth.';
     }
 
     setCursorInfo(text) {
@@ -789,8 +803,6 @@ class App {
     }
 
     loop(timestamp) {
-        this.input.update();
-
         if (this.isPlaying) {
             this.scheduler.update();
             this.cardinalTime = this.scheduler.currentBeat();
