@@ -1,3 +1,5 @@
+import { theme, font, withAlpha, trackColor } from './theme.js';
+
 export class UIManager {
     constructor(app) {
         this.app = app;
@@ -16,9 +18,6 @@ export class UIManager {
         this.beatWidth = 50; // Pixels per beat/quarter note
         this.keyHeight = 20; // Pixels per key
         this.headerHeight = 30; // Ruler height
-        this.gridColor = '#666';
-        this.barColor = '#636e72';
-        this.bgColor = '#272A2D';
 
         // Grid Settings
         this.gridDivisions = 4; // Divisions per bar (4 beats). 4 = quarter notes.
@@ -78,8 +77,8 @@ export class UIManager {
 
     draw(inputState, playheadTime = -1) {
         // Get data
-        const currentTrack = this.app.songData.tracks[this.app.currentTrackId];
-        const notes = currentTrack ? currentTrack.notes : [];
+        const pattern = this.app.currentPattern;
+        const notes = pattern ? pattern.notes : [];
         const selectedNotes = inputState ? inputState.selectedNotes || [] : [];
         const selectionStart = inputState ? inputState.selectionStart : null;
 
@@ -135,21 +134,30 @@ export class UIManager {
         }
 
         // Clear
-        this.ctx.fillStyle = this.bgColor;
+        this.ctx.fillStyle = theme.surface2;
         this.ctx.fillRect(0, 0, this.width, this.height);
 
         // Draw Grid
         this.drawGrid();
 
-        // Draw Ghost Notes (Other tracks)
-        const anySolo = this.app.songData.tracks.some(t => t.solo);
-        this.app.songData.tracks.forEach(track => {
-            if (track.id !== this.app.currentTrackId) {
-                if (anySolo && !track.solo) return;
-                if (track.muted) return;
-                this.drawGhostNotes(track.notes);
+        // Draw Ghost Notes (other tracks playing at the same place in the song)
+        this.drawGhostNotes(this.app.getGhostNotes());
+
+        // Shade the area after the end of the pattern
+        if (pattern) {
+            const endX = pattern.length * this.beatWidth - this.scrollX + this.pianoKeyWidth;
+            if (endX < this.width) {
+                const x = Math.max(endX, this.pianoKeyWidth);
+                this.ctx.fillStyle = withAlpha(theme.bg, 0.6);
+                this.ctx.fillRect(x, 0, this.width - x, this.height);
+                this.ctx.strokeStyle = theme.accent;
+                this.ctx.lineWidth = 2;
+                this.ctx.beginPath();
+                this.ctx.moveTo(endX, 0);
+                this.ctx.lineTo(endX, this.height);
+                this.ctx.stroke();
             }
-        });
+        }
 
         // Draw Selection Range (if selecting)
         if (selectionStart && inputState.cursor) {
@@ -168,7 +176,7 @@ export class UIManager {
         if (playheadTime >= 0) {
             const x = playheadTime * this.beatWidth - this.scrollX + this.pianoKeyWidth;
             if (x >= 0 && x <= this.width) {
-                this.ctx.strokeStyle = '#0984e3';
+                this.ctx.strokeStyle = theme.playhead;
                 this.ctx.lineWidth = 2;
                 this.ctx.beginPath();
                 this.ctx.moveTo(x, 0);
@@ -204,10 +212,10 @@ export class UIManager {
         const width = (maxTime - minTime) * this.beatWidth + (step * this.beatWidth);
         const h = (maxPitch - minPitch + 1) * this.keyHeight;
 
-        this.ctx.fillStyle = 'rgba(0, 184, 148, 0.15)';
+        this.ctx.fillStyle = withAlpha(theme.selection, 0.15);
         this.ctx.fillRect(x, y, width, h);
 
-        this.ctx.strokeStyle = '#00b894';
+        this.ctx.strokeStyle = theme.selection;
         this.ctx.lineWidth = 2;
         this.ctx.setLineDash([5, 5]);
         this.ctx.strokeRect(x, y, width, h);
@@ -215,6 +223,8 @@ export class UIManager {
     }
 
     drawNotes(notes, selectedNotes = []) {
+        const pattern = this.app.currentPattern;
+        const color = trackColor(pattern ? pattern.trackId : 0);
         // For prototype, simple loop is fine
         for (const note of notes) {
             const x = note.time * this.beatWidth - this.scrollX + this.pianoKeyWidth;
@@ -232,11 +242,11 @@ export class UIManager {
             const opacity = 0.3 + (0.7 * (velocity / 127));
 
             if (isSelected) {
-                this.ctx.fillStyle = `rgba(0, 206, 201, ${opacity})`; // Cyan for selected
-                this.ctx.strokeStyle = '#00b894';
+                this.ctx.fillStyle = withAlpha(theme.selection, opacity);
+                this.ctx.strokeStyle = theme.text;
             } else {
-                this.ctx.fillStyle = `rgba(253, 121, 168, ${opacity})`; // Normal pink
-                this.ctx.strokeStyle = '#e84393';
+                this.ctx.fillStyle = withAlpha(color, opacity);
+                this.ctx.strokeStyle = color;
             }
 
             this.ctx.lineWidth = isSelected ? 2 : 1;
@@ -246,8 +256,8 @@ export class UIManager {
     }
 
     drawGhostNotes(notes) {
-        this.ctx.fillStyle = 'rgba(120, 120, 120, 0.2)';
-        this.ctx.strokeStyle = 'rgba(150, 150, 150, 0.3)';
+        this.ctx.fillStyle = withAlpha(theme.textMuted, 0.18);
+        this.ctx.strokeStyle = withAlpha(theme.textMuted, 0.35);
         this.ctx.lineWidth = 1;
 
         for (const note of notes) {
@@ -279,7 +289,7 @@ export class UIManager {
         const gridStart = Math.floor(startBeat / step) * step;
 
         // Draw Background Highlights for Even Beats (2nd, 4th, etc.) relative to Bar Start
-        this.ctx.fillStyle = 'rgba(160, 160, 160, 0.03)';
+        this.ctx.fillStyle = withAlpha(theme.text, 0.025);
 
         // Loop beats for highlights
         for (let b = Math.floor(startBeat); b < endBeat; b++) {
@@ -336,10 +346,10 @@ export class UIManager {
             const isBar = this.app.transport.isBarStart(t);
 
             if (isBar) {
-                this.ctx.strokeStyle = this.barColor; // Bar line
+                this.ctx.strokeStyle = theme.gridBar; // Bar line
                 this.ctx.lineWidth = 2;
             } else {
-                this.ctx.strokeStyle = this.gridColor; // Beat/Subdivision line
+                this.ctx.strokeStyle = theme.gridLine; // Beat/Subdivision line
                 this.ctx.lineWidth = 0.3;
             }
 
@@ -365,12 +375,12 @@ export class UIManager {
             // Draw Background for Black Keys
             const isBlack = this.isBlackKey(note);
             if (isBlack) {
-                this.ctx.fillStyle = 'rgba(27, 29, 31, 0.7)';
+                this.ctx.fillStyle = withAlpha(theme.bg, 0.35);
                 this.ctx.fillRect(this.pianoKeyWidth, y, this.width - this.pianoKeyWidth, this.keyHeight);
             }
 
             // Line - Octave lines (B notes) are thicker
-            this.ctx.strokeStyle = this.gridColor;
+            this.ctx.strokeStyle = note % 12 === 11 ? theme.gridBar : theme.gridLine;
             if (note % 12 === 11) {
                 this.ctx.lineWidth = 1.0; // Thicker line for octave boundaries
             } else {
@@ -391,24 +401,24 @@ export class UIManager {
         const step = 4 / this.gridDivisions;
         const w = step * this.beatWidth;
 
-        this.ctx.fillStyle = 'rgba(108, 92, 231, 0.5)';
+        this.ctx.fillStyle = withAlpha(theme.accent, 0.45);
         this.ctx.fillRect(x, y, w, this.keyHeight);
 
-        this.ctx.strokeStyle = '#6c5ce7';
+        this.ctx.strokeStyle = theme.accent;
         this.ctx.lineWidth = 2;
         this.ctx.strokeRect(x, y, w, this.keyHeight);
     }
 
     drawRuler() {
         // Corner Box
-        this.ctx.fillStyle = '#2d3436';
+        this.ctx.fillStyle = theme.surface1;
         this.ctx.fillRect(0, 0, this.pianoKeyWidth, this.headerHeight);
 
         // Overlay background
-        this.ctx.fillStyle = 'rgba(30, 30, 30, 0.9)';
+        this.ctx.fillStyle = withAlpha(theme.surface1, 0.95);
         this.ctx.fillRect(this.pianoKeyWidth, 0, this.width - this.pianoKeyWidth, this.headerHeight);
 
-        this.ctx.strokeStyle = '#555';
+        this.ctx.strokeStyle = theme.border;
         this.ctx.beginPath();
         this.ctx.moveTo(0, this.headerHeight);
         this.ctx.lineTo(this.width, this.headerHeight);
@@ -427,10 +437,10 @@ export class UIManager {
             
             // Only draw if visible
             if (visibleWidth > 0) {
-                this.ctx.fillStyle = this.app.isLooping ? 'rgba(0, 206, 201, 0.3)' : 'rgba(30, 39, 46, 0.5)';
+                this.ctx.fillStyle = this.app.isLooping ? withAlpha(theme.loop, 0.3) : withAlpha(theme.surface3, 0.6);
                 this.ctx.fillRect(visibleStartX, 0, visibleWidth, this.headerHeight);
                 
-                this.ctx.strokeStyle = this.app.isLooping ? '#00cec9' : '#555';
+                this.ctx.strokeStyle = this.app.isLooping ? theme.loop : theme.border;
                 this.ctx.lineWidth = 2;
                 this.ctx.strokeRect(visibleStartX, 0, visibleWidth, this.headerHeight);
             }
@@ -439,27 +449,28 @@ export class UIManager {
         // Draw Markers
         const markers = this.app.transport.markerMap;
         if (markers && markers.length > 0) {
-            this.ctx.font = 'bold 12px sans-serif';
+            this.ctx.font = font(12, 'bold');
             this.ctx.textAlign = 'left';
             
             for (const marker of markers) {
                 // Draw marker to the right of measure number (offset by 25px)
-                const x = marker.beat * this.beatWidth - this.scrollX + this.pianoKeyWidth + 25;
+                const localBeat = marker.beat - this.app.patternContextStart;
+                const x = localBeat * this.beatWidth - this.scrollX + this.pianoKeyWidth + 25;
                 
                 // Only draw if visible
                 if (x >= this.pianoKeyWidth && x <= this.width) {
                     // Draw marker background
                     const size = this.headerHeight - 4;
                     
-                    this.ctx.fillStyle = 'rgba(253, 203, 110, 0.2)';
+                    this.ctx.fillStyle = withAlpha(theme.marker, 0.2);
                     this.ctx.fillRect(x - 2, 2, size, size);
                     
-                    this.ctx.strokeStyle = '#fdcb6e';
+                    this.ctx.strokeStyle = theme.marker;
                     this.ctx.lineWidth = 1;
                     this.ctx.strokeRect(x - 2, 2, size, size);
                     
                     // Draw marker text
-                    this.ctx.fillStyle = '#fdcb6e';
+                    this.ctx.fillStyle = theme.marker;
                     this.ctx.textAlign = 'center';
                     this.ctx.fillText(marker.label, x - 2 + size / 2, 20);
                     this.ctx.textAlign = 'left';
@@ -476,7 +487,7 @@ export class UIManager {
         // or just iterate visual width.
         // Let's iterate visual width in steps of 1 beat (display beat numbers)
 
-        this.ctx.font = '12px sans-serif';
+        this.ctx.font = font(12);
         this.ctx.textAlign = 'left';
 
         // To avoid overlapping text, maybe only draw measure numbers on bar starts?
@@ -493,7 +504,7 @@ export class UIManager {
 
             if (isBarStart) {
                 // Draw Measure Number
-                this.ctx.fillStyle = '#dfe6e9';
+                this.ctx.fillStyle = theme.text;
                 this.ctx.fillText(context.measure.toString(), x + 5, 20);
 
                 // Show BPM/TS only at Measure 1 or if there is a change event at this beat
@@ -511,25 +522,25 @@ export class UIManager {
 
                 if (showInfo) {
                     // Draw BPM/TS small below measure number
-                    this.ctx.font = '10px sans-serif';
-                    this.ctx.fillStyle = '#b2bec3';
+                    this.ctx.font = font(10);
+                    this.ctx.fillStyle = theme.textMuted;
                     const bpm = this.app.transport.getBpmAt(b);
                     const ts = context.timeSig;
                     this.ctx.fillText(`${bpm}bpm ${ts.num}/${ts.den}`, x + 20, 20);
                 }
 
-                this.ctx.strokeStyle = '#999';
+                this.ctx.strokeStyle = theme.borderStrong;
                 this.ctx.beginPath();
                 this.ctx.moveTo(x, 0);
                 this.ctx.lineTo(x, this.headerHeight);
                 this.ctx.stroke();
 
                 // Restore font
-                this.ctx.font = '12px sans-serif';
+                this.ctx.font = font(12);
             } else {
                 // Draw beat ticks (small)
                 if (b % 1 === 0) { // Full beats
-                    this.ctx.fillStyle = '#636e72';
+                    this.ctx.fillStyle = theme.textDim;
                     this.ctx.fillRect(x, this.headerHeight - 5, 1, 5);
                     // Optional: Draw beat number (1.2, 1.3...)
                     // this.ctx.fillText(`${Math.floor(context.beatInBar) + 1}`, x + 2, this.headerHeight - 8);
@@ -545,7 +556,7 @@ export class UIManager {
 
     drawPianoKeys() {
         // Draw background for keys column
-        this.ctx.fillStyle = '#1e272e';
+        this.ctx.fillStyle = theme.surface1;
         this.ctx.fillRect(0, 0, this.pianoKeyWidth, this.height);
 
         const startNote = 127 - Math.floor((this.scrollY) / this.keyHeight);
@@ -557,23 +568,23 @@ export class UIManager {
 
             const isBlack = this.isBlackKey(note);
 
-            this.ctx.fillStyle = isBlack ? '#2a3135' : '#f0f2f3';
+            this.ctx.fillStyle = isBlack ? theme.keyBlack : theme.keyWhite;
             this.ctx.fillRect(0, y, this.pianoKeyWidth, this.keyHeight);
 
-            this.ctx.strokeStyle = '#b2bec3';
+            this.ctx.strokeStyle = theme.textDim;
             this.ctx.strokeRect(0, y, this.pianoKeyWidth, this.keyHeight);
 
             // Label C notes
             if (note % 12 === 0) {
-                this.ctx.fillStyle = isBlack ? '#fff' : '#000';
-                this.ctx.font = '10px sans-serif';
+                this.ctx.fillStyle = isBlack ? theme.text : theme.bg;
+                this.ctx.font = font(10);
                 this.ctx.textAlign = 'right';
                 this.ctx.fillText(`C${Math.floor(note / 12) - 1}`, this.pianoKeyWidth - 5, y + this.keyHeight - 5);
             }
         }
         
         // Border right
-        this.ctx.strokeStyle = '#000';
+        this.ctx.strokeStyle = theme.bg;
         this.ctx.beginPath();
         this.ctx.moveTo(this.pianoKeyWidth, 0);
         this.ctx.lineTo(this.pianoKeyWidth, this.height);
