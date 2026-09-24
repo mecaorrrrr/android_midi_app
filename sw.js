@@ -1,4 +1,4 @@
-const CACHE_NAME = 'midi-seq-pro-v6';
+const CACHE_NAME = 'midi-seq-pro-v7';
 const ASSETS = [
     './',
     './index.html',

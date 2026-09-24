@@ -642,6 +642,69 @@ canvas {
     stroke-linecap: round;
 }
 
+/* Instrument row (top of the tone editor) */
+.tone-instrument {
+    grid-column: 1 / -1;
+}
+
+.tone-control.instrument {
+    align-items: stretch;
+    cursor: default;
+}
+
+.inst-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.inst-name-wrap {
+    position: relative;
+    flex: 1;
+    display: flex;
+    align-items: baseline;
+    gap: 12px;
+    min-width: 0;
+    padding: 4px 10px;
+    border-radius: var(--radius-sm);
+    background: var(--oled);
+    color: var(--oled-text);
+}
+
+.inst-name {
+    font-size: 1.5em;
+    font-weight: 400;
+    font-stretch: 80%;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.inst-sub {
+    color: var(--oled-dim);
+    font-size: 0.85em;
+    white-space: nowrap;
+}
+
+/* Tap the name to open the full list */
+.inst-select {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    opacity: 0;
+    cursor: pointer;
+    font-size: 16px;
+}
+
+.inst-select:disabled {
+    display: none;
+}
+
+.btn:disabled {
+    opacity: 0.45;
+    cursor: default;
+}
+
 .env-graph {
     display: block;
     width: 100%;

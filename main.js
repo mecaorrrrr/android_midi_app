@@ -97,25 +97,8 @@ class App {
         document.getElementById('preset-selector').addEventListener('change', (e) => {
             const idx = parseInt(e.target.value);
             if (!isNaN(idx) && idx >= 0) {
-                const presets = this.audio.getPresets();
-                if (presets && presets[idx]) {
-                    const preset = presets[idx];
-                    
-                    console.log(`[UI] Selected Preset Index: ${idx}, Name: ${preset.name}`);
-                    console.log(`[UI] Bank: ${preset.bank}, Program: ${preset.preset}`);
-
-                    // Update Track
-                    const track = this.songData.tracks[this.currentTrackId];
-                    track.bank = preset.bank;
-                    track.program = preset.preset;
-                    track.presetIndex = idx;
-
-                    this.audio.selectPreset(this.currentTrackId, idx);
-                    console.log(`[UI] Track ${this.currentTrackId + 1} updated to Bank:${track.bank} Program:${track.program} Index:${idx}`);
-
-                    // Preview Note
-                    this.audio.playNote(60, 0.5, this.currentTrackId);
-                }
+                this.saveState();
+                this.setTrackPreset(this.currentTrackId, idx);
             }
         });
 
@@ -169,6 +152,9 @@ class App {
     // Push volume / pan / tone of every track to the audio engine
     applyAllTrackSettings() {
         for (const track of this.songData.tracks) {
+            if (this.audio.hasSoundBank()) {
+                this.audio.setTrackInstrument(track.id, track.bank || 0, track.program || 0, track.presetIndex ?? -1);
+            }
             this.audio.setTrackVolume(track.id, track.volume);
             this.audio.setTrackPan(track.id, track.pan);
             this.audio.setTrackTone(track.id, track.tone);
@@ -736,6 +722,19 @@ class App {
 
             tbody.appendChild(tr);
         });
+    }
+
+    // Change a track's instrument (index into audio.getPresets()) and play a short preview
+    setTrackPreset(trackId, presetIndex, preview = true) {
+        const preset = this.audio.getPresets()[presetIndex];
+        if (!preset) return;
+        const track = this.songData.tracks[trackId];
+        track.bank = preset.bank;
+        track.program = preset.preset;
+        track.presetIndex = presetIndex;
+        this.audio.selectPreset(trackId, presetIndex);
+        if (trackId === this.currentTrackId) this.updateTrackUI();
+        if (preview) this.audio.playNote(60, 0.5, trackId);
     }
 
     getInstrumentName(track) {

@@ -37,7 +37,8 @@ export class ToneEditor {
         this.app = app;
         this.modal = document.getElementById('tone-modal');
         this.trackId = 0;
-        this.focusKey = 'attack';
+        this.focusKey = 'instrument';
+        this.presetOptionsKey = null;
         this.editUndoSaved = false;
         this.buildDom();
     }
@@ -76,6 +77,20 @@ export class ToneEditor {
             </div>`;
 
         this.modal.querySelector('.tone-body').innerHTML = `
+            <section class="tone-section tone-instrument">
+                <div class="tone-control instrument" data-key="instrument">
+                    <span class="tone-label">Instrument</span>
+                    <div class="inst-row">
+                        <button class="btn icon small" data-inst-prev title="Previous instrument">◀</button>
+                        <div class="inst-name-wrap">
+                            <b class="inst-name"></b>
+                            <span class="inst-sub"></span>
+                            <select class="inst-select" title="Choose an instrument"></select>
+                        </div>
+                        <button class="btn icon small" data-inst-next title="Next instrument">▶</button>
+                    </div>
+                </div>
+            </section>
             <section class="tone-section">
                 <h3>Amp Envelope</h3>
                 <svg class="env-graph" viewBox="0 0 240 100" preserveAspectRatio="none"></svg>
@@ -100,7 +115,8 @@ export class ToneEditor {
                 <div class="tone-controls">${knob('delay')}${knob('chorus')}${knob('reverb')}</div>
             </section>`;
 
-        this.modal.querySelectorAll('.tone-control').forEach(el => this.bindMouse(el));
+        this.modal.querySelectorAll('.tone-control:not(.instrument)').forEach(el => this.bindMouse(el));
+        this.bindInstrument();
         this.modal.querySelector('[data-tone-close]').addEventListener('click', () => this.close());
         this.modal.querySelector('[data-tone-reset-all]').addEventListener('click', () => this.resetAll());
         this.modal.querySelector('[data-tone-preview]').addEventListener('click', () => this.preview());
@@ -109,6 +125,70 @@ export class ToneEditor {
         this.modal.addEventListener('click', (e) => {
             if (e.target === this.modal) this.close();
         });
+    }
+
+    bindInstrument() {
+        const control = this.modal.querySelector('.tone-control.instrument');
+        control.addEventListener('pointerdown', () => {
+            this.focusKey = 'instrument';
+            this.editUndoSaved = false;
+            this.render();
+        });
+        control.addEventListener('wheel', (e) => {
+            e.preventDefault();
+            this.change('instrument', e.deltaY < 0 ? -1 : 1);
+        }, { passive: false });
+        this.modal.querySelector('[data-inst-prev]').addEventListener('click', () => this.change('instrument', -1));
+        this.modal.querySelector('[data-inst-next]').addEventListener('click', () => this.change('instrument', 1));
+        this.modal.querySelector('.inst-select').addEventListener('change', (e) => {
+            const index = parseInt(e.target.value);
+            if (isNaN(index)) return;
+            this.app.saveState();
+            this.app.setTrackPreset(this.trackId, index);
+            this.render();
+        });
+    }
+
+    // Presets in bank / program order (the order used for stepping)
+    sortedPresets() {
+        return [...this.app.audio.getPresets()].sort((a, b) => a.bank - b.bank || a.preset - b.preset);
+    }
+
+    changeInstrument(delta) {
+        const presets = this.sortedPresets();
+        if (presets.length === 0) return;
+        const track = this.app.songData.tracks[this.trackId];
+        let pos = presets.findIndex(p => p.index === track.presetIndex);
+        if (pos < 0) pos = presets.findIndex(p => p.bank === track.bank && p.preset === track.program);
+        const next = Math.max(0, Math.min(presets.length - 1, pos + delta));
+        if (next === pos) return;
+        if (!this.editUndoSaved) {
+            this.app.saveState();
+            this.editUndoSaved = true;
+        }
+        this.app.setTrackPreset(this.trackId, presets[next].index);
+        this.render();
+    }
+
+    renderInstrument(track) {
+        const hasBank = this.app.audio.hasSoundBank();
+        const presets = this.sortedPresets();
+        const select = this.modal.querySelector('.inst-select');
+
+        this.modal.querySelector('.inst-name').textContent = this.app.getInstrumentName(track);
+        this.modal.querySelector('.inst-sub').textContent = hasBank
+            ? `Bank ${track.bank}, program ${track.program}`
+            : 'Load a SoundFont from File to change instruments';
+        this.modal.querySelectorAll('[data-inst-prev], [data-inst-next]').forEach(b => { b.disabled = !hasBank; });
+        select.disabled = !hasBank;
+
+        // Rebuild the list only when the sound bank changes
+        const key = presets.map(p => p.index).join(',');
+        if (key !== this.presetOptionsKey) {
+            this.presetOptionsKey = key;
+            select.replaceChildren(...presets.map(p => new Option(`${p.bank}:${p.preset} ${p.name}`, String(p.index))));
+        }
+        if (hasBank) select.value = String(track.presetIndex);
     }
 
     bindMouse(el) {
@@ -149,6 +229,10 @@ export class ToneEditor {
     // -------------------------------------------------------------- Values
 
     change(key, delta) {
+        if (key === 'instrument') {
+            this.changeInstrument(delta);
+            return;
+        }
         const p = PARAMS[key];
         const value = Math.max(p.min, Math.min(p.max, this.tone[key] + delta));
         if (value === this.tone[key]) return;
@@ -161,7 +245,7 @@ export class ToneEditor {
     }
 
     reset(key) {
-        if (this.tone[key] === DEFAULT_TONE[key]) return;
+        if (key === 'instrument' || this.tone[key] === DEFAULT_TONE[key]) return;
         this.app.saveState();
         this.tone[key] = DEFAULT_TONE[key];
         this.apply();
@@ -258,9 +342,11 @@ export class ToneEditor {
             `T${this.trackId + 1}  ${track.name}, ${this.app.getInstrumentName(track)}`;
 
         for (const el of this.modal.querySelectorAll('.tone-control')) {
-            el.classList.toggle('focused', el.dataset.key === this.focusKey);
-            el.classList.toggle('modified', tone[el.dataset.key] !== DEFAULT_TONE[el.dataset.key]);
+            const key = el.dataset.key;
+            el.classList.toggle('focused', key === this.focusKey);
+            el.classList.toggle('modified', key in DEFAULT_TONE && tone[key] !== DEFAULT_TONE[key]);
         }
+        this.renderInstrument(track);
         for (const el of this.modal.querySelectorAll('[data-value]')) {
             const key = el.dataset.value;
             el.textContent = PARAMS[key].format(tone[key]);
