@@ -1,0 +1,273 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockup 1 — OP</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DotGothic16&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+    --body: #e3e3de;
+    --body-edge: #cfcfc9;
+    --key: #f1f1ed;
+    --ink: #1b1b1b;
+    --ink-soft: #6d6d68;
+    --screen: #000;
+    --blue: #1f6fe5;
+    --green: #22b14c;
+    --white: #ececec;
+    --orange: #ff6a13;
+    --dot: #3a3a3a;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #b9b9b3; font-family: 'Instrument Sans', sans-serif; color: var(--ink); padding: 2rem 1rem 4rem; }
+.page-note { max-width: 1280px; margin: 0 auto 1rem; font-size: 0.95rem; color: #3a3a37; }
+.page-note a { color: inherit; }
+figure { max-width: 1280px; margin: 0 auto 2.5rem; container-type: inline-size; }
+figcaption { font-size: 0.9rem; color: #3a3a37; margin: 0 0 0.5rem 0.25rem; }
+
+/* 1em = 16px at 1280px wide */
+.device {
+    font-size: 1.25cqw;
+    aspect-ratio: 16 / 10;
+    background: var(--body);
+    border-radius: 2.2em;
+    box-shadow: inset 0 0 0 0.15em var(--body-edge), 0 1.2em 2.5em rgba(40, 40, 30, 0.25);
+    padding: 1.4em 1.8em 1.2em;
+    display: grid;
+    grid-template-rows: 5.6em 1fr 4em;
+    gap: 1em;
+}
+
+/* Top strip: four encoders, view keys, tap menus */
+.top { display: flex; align-items: center; gap: 2.2em; }
+.encoders { display: flex; gap: 1.6em; }
+.encoder { display: flex; align-items: center; gap: 0.7em; }
+.knob {
+    width: 3.6em; height: 3.6em; border-radius: 50%;
+    background: var(--key);
+    box-shadow: 0 0.2em 0.35em rgba(0, 0, 0, 0.18), inset 0 0 0 0.45em var(--c);
+    position: relative;
+}
+.knob::after {
+    content: ''; position: absolute; left: 50%; top: 0.55em; width: 0.22em; height: 0.9em;
+    background: var(--ink); border-radius: 0.1em; transform-origin: 50% 1.25em; transform: translateX(-50%) rotate(var(--r));
+}
+.encoder-text { display: flex; flex-direction: column; line-height: 1.15; }
+.encoder-text small { font-size: 0.8em; color: var(--ink-soft); }
+.encoder-text b { font-family: 'DotGothic16', sans-serif; font-weight: 400; font-size: 1.15em; }
+
+.keys { display: flex; gap: 0.5em; margin-left: auto; }
+.key {
+    height: 2.6em; padding: 0 1em; border: none; border-radius: 0.8em;
+    background: var(--key); color: var(--ink); font: inherit; font-size: 0.95em;
+    box-shadow: 0 0.18em 0 var(--body-edge), 0 0.25em 0.4em rgba(0, 0, 0, 0.12);
+    display: inline-flex; align-items: center; gap: 0.5em;
+}
+.key .led { width: 0.5em; height: 0.5em; border-radius: 50%; background: #c9c9c3; }
+.key.on .led { background: var(--orange); box-shadow: 0 0 0.5em var(--orange); }
+.key.round { width: 2.6em; padding: 0; justify-content: center; border-radius: 50%; }
+.gap { width: 1em; }
+
+/* Screen */
+.screen {
+    background: var(--screen); border-radius: 1.1em; padding: 0.9em 1.1em 0.8em;
+    box-shadow: inset 0 0 0 0.3em #0d0d0d, 0 0 0 0.12em #bdbdb7;
+    color: var(--white); font-family: 'DotGothic16', sans-serif;
+    display: flex; flex-direction: column; min-height: 0;
+}
+.readout { display: flex; gap: 1.6em; font-size: 1.05em; margin-bottom: 0.6em; align-items: baseline; }
+.readout .dim { color: #7b7b7b; }
+.readout .right { margin-left: auto; }
+
+/* Song lanes */
+.song-area { flex: 1; display: grid; grid-template-columns: 8.5em 1fr; grid-template-rows: auto 1fr; min-height: 0; }
+.ruler { grid-column: 2; position: relative; height: 1.5em; color: #8a8a8a; font-size: 0.85em; }
+.ruler span { position: absolute; top: 0; transform: translateX(0.3em); }
+.loop-bar { position: absolute; bottom: 0.1em; height: 0.25em; background: var(--orange); border-radius: 1em; }
+.names { display: grid; grid-template-rows: repeat(8, 1fr); }
+.name { display: flex; align-items: center; gap: 0.6em; font-size: 1em; }
+.name i { width: 0.7em; height: 0.7em; border-radius: 50%; background: var(--c); flex: none; }
+.name.muted { color: #555; }
+.name.muted i { background: none; box-shadow: inset 0 0 0 0.12em var(--c); }
+.name.active { color: #fff; }
+.name.active::before { content: '▸'; margin-left: -0.9em; width: 0.3em; color: var(--orange); }
+.lanes {
+    position: relative; display: grid; grid-template-rows: repeat(8, 1fr);
+    background-image: radial-gradient(circle, var(--dot) 0.09em, transparent 0.1em);
+    background-size: calc(100% / 64) calc(100% / 8);
+    background-position: 0 50%;
+}
+.clip {
+    position: absolute; border-radius: 0.8em; background: var(--c); color: #000;
+    padding: 0.25em 0.55em; overflow: hidden;
+}
+.clip b { font-weight: 400; font-size: 0.95em; }
+.clip.muted { background: none; box-shadow: inset 0 0 0 0.14em var(--c); color: var(--c); opacity: 0.6; }
+.clip .n { position: absolute; height: 0.28em; background: currentColor; border-radius: 0.2em; opacity: 0.55; }
+.playhead { position: absolute; top: -0.4em; bottom: 0; width: 0.14em; background: #fff; }
+.playhead::before { content: ''; position: absolute; top: 0; left: -0.3em; width: 0.74em; height: 0.74em; border-radius: 50%; background: #fff; }
+.bracket { position: absolute; border: 0.18em solid var(--orange); border-radius: 0.9em; }
+
+/* Piano roll */
+.roll-area { flex: 1; display: grid; grid-template-columns: 5em 1fr; grid-template-rows: 1fr 3em; column-gap: 0.6em; row-gap: 0.4em; min-height: 0; }
+.vel-label { align-self: center; color: #7b7b7b; font-size: 0.85em; }
+.kbd { display: flex; flex-direction: column; gap: 0.08em; }
+.kbd div { flex: 1; border-radius: 0 0.5em 0.5em 0; background: #d9d9d4; color: #000; font-size: 0.7em; display: flex; align-items: center; justify-content: flex-end; padding-right: 0.4em; }
+.kbd div.b { background: #3b3b3b; width: 65%; }
+.grid { position: relative; overflow: hidden;
+    background-image:
+        linear-gradient(90deg, #262626 0.08em, transparent 0.08em),
+        radial-gradient(circle, var(--dot) 0.08em, transparent 0.09em);
+}
+.row-b { position: absolute; left: 0; right: 0; background: #0e0e0e; }
+.note { position: absolute; border-radius: 0.6em; background: var(--c); }
+.note.sel { background: var(--orange); box-shadow: 0 0 0.9em rgba(255, 106, 19, 0.6); }
+.ghost { position: absolute; border-radius: 0.6em; box-shadow: inset 0 0 0 0.12em #555; }
+.beyond { position: absolute; top: 0; bottom: 0; right: 0;
+    background: repeating-linear-gradient(135deg, transparent 0 0.5em, #1a1a1a 0.5em 0.65em); }
+.vel { position: relative; border-top: 0.1em solid #262626; }
+.vel i { position: absolute; bottom: 0.3em; width: 0.35em; border-radius: 0.2em; background: var(--c); }
+.vel i.sel { background: var(--orange); }
+
+/* Bottom strip: keycap legends that match the gamepad */
+.bottom { display: flex; align-items: center; gap: 1.6em; font-size: 0.95em; }
+.cap { display: inline-flex; align-items: center; gap: 0.55em; }
+.cap kbd {
+    font-family: 'Instrument Sans', sans-serif; font-weight: 600; font-size: 0.9em;
+    min-width: 2.1em; height: 2.1em; padding: 0 0.5em; border-radius: 0.6em;
+    background: var(--key); box-shadow: 0 0.15em 0 var(--body-edge);
+    display: inline-flex; align-items: center; justify-content: center;
+}
+.cap span { color: var(--ink-soft); }
+.bottom .brand { margin-left: auto; font-weight: 600; letter-spacing: 0.02em; }
+</style>
+</head>
+<body>
+<p class="page-note">案1：遊び心のあるハード機材風（Teenage Engineering OP-1 のイメージ）。<a href="index.html">案の一覧へ</a></p>
+
+<figure>
+    <figcaption>トラック一覧（SONG）</figcaption>
+    <div class="device" id="song"></div>
+</figure>
+<figure>
+    <figcaption>ピアノロール（PATTERN）</figcaption>
+    <div class="device" id="roll"></div>
+</figure>
+
+<script src="data.js"></script>
+<script>
+const M = window.MOCK;
+const COLORS = ['var(--blue)', 'var(--green)', 'var(--white)', 'var(--orange)'];
+const color = (t) => COLORS[t % 4];
+const pct = (v) => `${(v * 100).toFixed(3)}%`;
+
+function encoders(items) {
+    return `<div class="encoders">${items.map(([c, label, value, r]) => `
+        <div class="encoder">
+            <div class="knob" style="--c:${c};--r:${r}deg"></div>
+            <div class="encoder-text"><small>${label}</small><b>${value}</b></div>
+        </div>`).join('')}</div>`;
+}
+
+function topStrip(view, items) {
+    return `<div class="top">
+        ${encoders(items)}
+        <div class="keys">
+            <button class="key ${view === 'song' ? 'on' : ''}"><i class="led"></i>song</button>
+            <button class="key ${view === 'roll' ? 'on' : ''}"><i class="led"></i>pattern</button>
+            <span class="gap"></span>
+            <button class="key">tone</button>
+            <button class="key">add</button>
+            <button class="key">file</button>
+        </div>
+    </div>`;
+}
+
+function bottomStrip(items) {
+    return `<div class="bottom">${items.map(([k, t]) => `<span class="cap"><kbd>${k}</kbd><span>${t}</span></span>`).join('')}
+        <span class="brand">midi pad</span></div>`;
+}
+
+// ---------------------------------------------------------------- Song
+(() => {
+    const s = M.song;
+    const cur = M.tracks[s.cursorTrack];
+    const names = M.tracks.map((t, i) => `
+        <div class="name ${t.mute ? 'muted' : ''} ${i === s.cursorTrack ? 'active' : ''}" style="--c:${color(i)}">
+            <i></i>${t.name.toLowerCase()}</div>`).join('');
+    const clips = M.clips.map(c => {
+        const notes = M.preview(c.track, c.pattern, c.length).map(n =>
+            `<i class="n" style="left:${pct(n.x)};top:calc(1.4em + ${pct(n.y * 0.62)});width:${pct(n.w)}"></i>`).join('');
+        const muted = M.tracks[c.track].mute ? 'muted' : '';
+        return `<div class="clip ${muted}" style="--c:${color(c.track)};left:calc(${pct(c.start / M.bars)} + 0.15em);width:calc(${pct(c.length / M.bars)} - 0.3em);top:calc(${pct(c.track / 8)} + 0.25em);height:calc(${pct(1 / 8)} - 0.5em)">
+            <b>${c.pattern.toLowerCase()}</b>${notes}</div>`;
+    }).join('');
+    const ruler = Array.from({ length: M.bars }, (_, i) => `<span style="left:${pct(i / M.bars)}">${i + 1}</span>`).join('');
+
+    document.getElementById('song').innerHTML = `
+        ${topStrip('song', [
+            ['var(--blue)', 'volume', Math.round(cur.vol * 100), -30],
+            ['var(--green)', 'pan', 'l20', -25],
+            ['var(--white)', 'tone', 'edit', 40],
+            ['var(--orange)', 'pattern', 'b', 90]
+        ])}
+        <div class="screen">
+            <div class="readout"><span>bar 9</span><span class="dim">beat 1</span><span>${s.bpm} bpm</span><span class="dim">4/4</span>
+                <span class="right">${cur.name.toLowerCase()} / ${cur.inst.toLowerCase()}</span></div>
+            <div class="song-area">
+                <div class="ruler">${ruler}<i class="loop-bar" style="left:${pct(s.loop[0] / M.bars)};width:${pct((s.loop[1] - s.loop[0]) / M.bars)}"></i></div>
+                <div class="names">${names}</div>
+                <div class="lanes">${clips}
+                    <div class="bracket" style="left:${pct(s.cursorBar / M.bars)};width:${pct(1 / M.bars)};top:${pct(s.cursorTrack / 8)};height:${pct(1 / 8)}"></div>
+                    <div class="playhead" style="left:${pct(s.playheadBar / M.bars)}"></div>
+                </div>
+            </div>
+        </div>
+        ${bottomStrip([['A', 'place / open'], ['B', 'copy, hold to delete'], ['X', 'play'], ['Y', 'select'], ['start', 'next track'], ['select', 'hold for pattern']])}`;
+})();
+
+// ----------------------------------------------------------- Piano roll
+(() => {
+    const r = M.roll;
+    const rows = r.high - r.low + 1;
+    const span = r.beats + 1; // show half a bar past the end
+    const y = (p) => pct((r.high - p) / rows);
+    const x = (t) => pct(t / span);
+    const keys = Array.from({ length: rows }, (_, i) => {
+        const p = r.high - i;
+        return `<div class="${M.isBlack(p) ? 'b' : ''}">${p % 12 === 0 ? M.noteName(p) : ''}</div>`;
+    }).join('');
+    const blackRows = Array.from({ length: rows }, (_, i) => r.high - i).filter(M.isBlack)
+        .map(p => `<i class="row-b" style="top:${y(p)};height:${pct(1 / rows)}"></i>`).join('');
+    const ghosts = r.ghosts.map(n => `<i class="ghost" style="left:${x(n.t)};width:calc(${x(n.d)} - 0.2em);top:${y(n.p)};height:${pct(1 / rows)}"></i>`).join('');
+    const notes = r.notes.map((n, i) => `<i class="note ${r.selected.includes(i) ? 'sel' : ''}" style="--c:var(--white);opacity:${0.45 + n.v / 230};left:${x(n.t)};width:calc(${x(n.d)} - 0.2em);top:calc(${y(n.p)} + 0.08em);height:calc(${pct(1 / rows)} - 0.16em)"></i>`).join('');
+    const vel = r.notes.map((n, i) => `<i class="${r.selected.includes(i) ? 'sel' : ''}" style="--c:#8a8a8a;left:calc(${x(n.t)} + ${(n.p % 4) * 0.45}em);height:${(n.v / 127 * 2.4).toFixed(2)}em"></i>`).join('');
+
+    document.getElementById('roll').innerHTML = `
+        ${topStrip('roll', [
+            ['var(--blue)', 'velocity', '110', 60],
+            ['var(--green)', 'length', '3/8', -10],
+            ['var(--white)', 'grid', '1/8', 20],
+            ['var(--orange)', 'pattern', '2 bars', -60]
+        ])}
+        <div class="screen">
+            <div class="readout"><span>keys</span><span class="dim">pattern b</span><span>C5</span><span class="dim">beat 5</span>
+                <span class="right">grand piano</span></div>
+            <div class="roll-area">
+                <div class="kbd">${keys}</div>
+                <div class="grid" style="background-size:${pct(1 / span)} 100%, ${pct(0.5 / span)} ${pct(1 / rows)}">
+                    ${blackRows}${ghosts}${notes}
+                    <i class="beyond" style="width:${pct(1 / span)}"></i>
+                    <i class="bracket" style="left:${x(r.cursor.t)};width:${x(0.5)};top:${y(r.cursor.p)};height:${pct(1 / rows)};border-radius:0.5em"></i>
+                </div>
+                <span class="vel-label">velocity</span>
+                <div class="vel">${vel}</div>
+            </div>
+        </div>
+        ${bottomStrip([['A', 'note, hold + pad to edit'], ['B', 'copy, hold to delete'], ['X', 'play'], ['Y', 'select'], ['L2', 'grid'], ['select', 'hold for song']])}`;
+})();
+</script>
+</body>
+</html>

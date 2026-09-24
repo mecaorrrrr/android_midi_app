@@ -21,9 +21,9 @@ Android の Chrome での利用を主目的とし、PC ブラウザでも動作�
 
 | ファイル | 役割 |
 |---|---|
-| `index.html` | エントリ。ヘッダー（画面タブ、再生/マーカー、プリセット、ADD/FILE メニュー）、`#piano-roll` canvas、HUD、トースト、共通ダイアログ、各モーダル。スタイルは持たない |
-| `style.css` | 全スタイル。`:root` のデザイントークン（色・フォント・角丸・トラック色 `--track-1..8`）が**唯一の定義元** |
-| `theme.js` | `loadTheme()` で CSS のトークンを読み込み、Canvas 描画用に `theme` / `font()` / `withAlpha()` / `trackColor()` を提供 |
+| `index.html` | エントリ。上段（パラメーター画面 `.oled` ＋ ハードウェア風キー Song / Pattern / Tone / Add / File）、`#piano-roll` canvas、下段のゲームパッド凡例 `#legend`、トースト、共通ダイアログ、各モーダル。スタイルは持たない |
+| `style.css` | 全スタイル。`:root` のデザイントークンが**唯一の定義元**（Elektron 風: グレーの本体 `--body`、インク `--ink`、アクセントは赤 `--trig` の1色だけ、キーの質感 `--key-*`、LED `--led-*`） |
+| `theme.js` | `loadTheme()` で CSS のトークンを読み込み、Canvas 描画用に `theme` / `font()` / `withAlpha()` を提供 |
 | `main.js` | `App` クラス。状態（`songData`）、画面（`view`）切替、undo/redo、FILE/ADD メニューの**動的生成**、モーダル、保存/読込、MIDI 書き出し、メインループ |
 | `song.js` | ソングのデータモデルと純粋関数（パターン/クリップの作成、`clipAt`、`forEachSongNote`、`flattenTrack` など）。DOM 非依存なので Node でテストできる |
 | `song_view.js` | `SongView`。ソング画面（トラック×小節）の Canvas 描画とマウス操作。トラック色 `TRACK_COLORS` |
@@ -50,12 +50,16 @@ Android の Chrome での利用を主目的とし、PC ブラウザでも動作�
 - **ループ**: `app.loops.song` / `app.loops.pattern` を画面ごとに持ち、`app.loopRegion` / `app.isLooping` は現在の画面の値を返す getter/setter。パターン画面はサブループ未設定ならパターン全体をループ。
 - `songData` は undo/redo で JSON 丸ごと差し替わるため、ノートやパターンのオブジェクト参照を長く保持しない（ID で引き直す）。
 - トラック数は 8 固定（`song.js` の `TRACK_COUNT`、`audio.js` にも同値の定数）。
-- **再生**: `App.startPlayback()` / `stopPlayback()` / `togglePlayback()` が入口。`App.loop()`（requestAnimationFrame）は毎フレーム `scheduler.update()` を呼び、`cardinalTime`（プレイヘッド）は `scheduler.currentBeat()` から AudioContext の時刻を基準に求める。スケジューラーは `app.forEachPlaybackNote()`（ソング画面=全クリップ、パターン画面=編集中パターン）と `app.getPlaybackLoop()` を使うので画面に依存しない。ミュート/ソロは予約時点で判定する（パターン画面ではミュート中でも鳴らす）。ソング画面はループ無しなら曲末で自動停止。
+- **再生**: `App.startPlayback()` / `stopPlayback()` / `togglePlayback()` が入口。`App.loop()`（requestAnimationFrame）は毎フレーム `scheduler.update()` を呼び、`cardinalTime`（プレイヘッド）は `scheduler.currentBeat()` から AudioContext の時刻を基準に求める。スケジューラーは `app.forEachPlaybackNote()`（ソング画面=全クリップ、パターン画面=編集中パターン＋開いたクリップ位置 `patternContextStart` の他トラック。置かれていないパターンは単体）と `app.getPlaybackLoop()` を使うので画面に依存しない。パターン画面のテンポは `app.getPlaybackBeatOffset()` で曲中の位置のテンポマップを参照する。ミュート/ソロはどちらの画面でも同じく予約時点で判定する。ソング画面はループ無しなら曲末で自動停止。
 - **発音（SF2）**: トラック N = MIDI チャンネル N。音量/パンは CC7/CC10、音色は Bank Select (CC0/CC32) + Program Change、ドラムは `midiChannels[N].setDrums(true)`（プリセット一覧では bank 128 として扱う）。ADSR・フィルター・モジュレーター等はすべて spessasynth が SF2 仕様どおりに処理する。
+- **音色の変更**: `app.setTrackPreset(trackId, presetIndex)` に集約（track の bank/program/presetIndex 更新 → synth に送信 → 試聴）。UI は Tone Editor 最上段の Instrument 行（ゲームパッドで前後移動、タップで一覧）と、SONG 画面のパラメーター画面の楽器名。undo 後は `applyAllTrackSettings()` が音色も再送する。
 - **トーン（`track.tone`）**: エンベロープ/フィルターは SoundFont の値からの**相対値**（-64..63、0 = プリセットのまま）。`audio.js` の `toneControllerMessages()` が標準 MIDI メッセージ（CC73/75/72 = A/D/R、CC74/71 = Cutoff/Resonance、CC91/93/94 = Reverb/Chorus/Delay、SF2 NRPN 120 で sustainVolEnv のオフセット、RPN 2/1 = Transpose/Fine）に変換し、ライブ再生と MIDI 書き出しの両方で同じものを使う。SFZ/サイン波ではエンベロープと Tune のみ `applyToneToEnvelope()` と detune で近似。undo/読み込み後は `app.applyAllTrackSettings()` で音量・パン・トーンを再送する。古いプロジェクトの欠けたフィールドは `normalizeSong()` で補う。
+- **レイテンシ**: ゲームパッドは `setInterval` で 4ms ごとに `input.update()`（描画は rAF の `loop()`）。即時発音（試聴）は時刻指定なしで synth に送る（時刻付きだとイベントキュー経由で 1 ブロック遅れる）。再生開始の先行時間は `Scheduler.startDelay`（0.02 秒）。ブラウザ/OS の出力遅延は `audio.getOutputLatencyMs()` で取得し、初回クリック後にヘッダーのステータスに表示する。
 - **停止**: spessasynth の予約済みイベントは取り消せないため、`AudioManager.stopAll()` は未来の noteOn と同時刻に noteOff を送って打ち消し、そのうえで `synth.stopAll()` を呼ぶ。
 - **SFZ / サイン波**: Web Audio のトラック別 Gain→StereoPanner→Master 経路。`scheduleEnvelope()` で DAHDSR（SFZ は `ampeg_*`）を適用し、ノート終了後に release 分だけ余韻が鳴る。
-- **GUI の決まり**: 色・フォントは `style.css` の `:root` トークンだけで定義する。Canvas では `theme.js` 経由で参照し、JS/HTML に色コードやインライン `style` を直接書かない（トラック色のスウォッチのようなデータ由来の値は例外）。ボタンは `.btn`（`.icon` / `.primary` / `.small` / `.active`）、メニューは `.menu` + `[data-menu-toggle]` + `.menu-item[data-action]`（処理は `main.js` の `setupMenus()`）、モーダルは `.modal` に `.open` を付け外しする。
+- **GUI の決まり**（デザインは `mockups/cycles.html` が基準）: 色・フォントは `style.css` の `:root` トークンだけで定義する。Canvas では `theme.js` 経由で参照し、JS/HTML に色コードやインライン `style` を直接書かない。アクセント色は赤 `--trig` だけ（カーソル・再生位置・ループ・点灯 LED）。上段のキーは `.k`（`<i>` が LED、`.on` で赤点灯）、パネル内のボタンは `.btn`（`.primary` / `.small` / `.active` = 押し込み）、メニューは `.menu` + `[data-menu-toggle]` + `.menu-item[data-action]`（処理は `main.js` の `setupMenus()`）、モーダルは `.modal` に `.open` を付け外しする。
+- **上段・下段**: パラメーター画面は `App.updateOled()` が毎フレーム状態から組み立てる（変化時のみ DOM 更新）。楽器選択は `#preset-selector`（透明な `<select>`）を SONG 画面のタイトル部分に重ねている。下段の凡例は `updateViewUI()` で画面ごとに差し替える。一時メッセージは `input.updateStatus()` / `app.showToast()` でトーストに出す。
+- **SONG 画面のトラックキー**: `song_view.js` の `drawTrackKey()` が Canvas に描く。LED は白 = 通常、消灯 = Mute、赤 = Solo。選択中のトラックはキーが押し込まれた表示（沈み込み＋側面の影なし）。
 - **ダイアログ**: `alert` / `prompt` / `confirm` は使わず `app.showDialog({ title, message, input, cancel })`（Promise）/ `app.showAlert()` / `app.showToast()` を使う。ダイアログ表示中はゲームパッドの A/B が OK/キャンセルになり、閉じた後は A/B を離すまでエディター側に入力を渡さない（`input.js` の `waitForRelease`）。
 
 ## 予定している改修（ユーザー要望）

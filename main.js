@@ -4,14 +4,15 @@ import { AudioManager, toneControllerMessages } from './audio.js';
 import { TransportManager } from './transport.js';
 import { Scheduler } from './scheduler.js';
 import { SongView } from './song_view.js';
-import { loadTheme, trackColor } from './theme.js';
+import { loadTheme } from './theme.js';
 import { ToneEditor } from './tone_editor.js';
 import {
     createSong, normalizeSong, SONG_VERSION, getPattern, patternsOfTrack, createPattern, addClip,
-    clipAt, forEachSongNote, flattenTrack, songEnd
+    clipAt, forEachSongNote, flattenTrack, songEnd, isTrackAudible
 } from './song.js';
 
 const DEFAULT_PATTERN_BARS = 4;
+const INPUT_POLL_MS = 4;
 
 console.log("Initializing Android MIDI App...");
 
@@ -50,7 +51,11 @@ class App {
         document.body.addEventListener('click', () => {
             if (!this.audio.ctx) this.audio.init();
             this.audio.resume();
+            setTimeout(() => this.showAudioLatency(), 1000);
         }, { once: true });
+
+        // Poll the gamepad faster than the display refresh to cut input latency
+        setInterval(() => this.input.update(), INPUT_POLL_MS);
 
         this.setupMenus();
         this.setupTransportButtons();
@@ -62,9 +67,9 @@ class App {
         document.getElementById('sfz-file-input').addEventListener('change', async (e) => {
             if (e.target.files.length > 0) {
                 this.audio.init();
-                document.getElementById('status-display').textContent = "Loading SFZ...";
+                this.showToast('Loading SFZ...');
                 const success = await this.audio.loadSFZ(e.target.files);
-                document.getElementById('status-display').textContent = success ? "SFZ Loaded" : "Load Failed";
+                this.showToast(success ? 'SFZ loaded' : 'Could not load the SFZ folder');
                 // Clear SF2 preset selector when loading SFZ
                 const presetSel = document.getElementById('preset-selector');
                 presetSel.innerHTML = '<option value="">-- SFZ Mode --</option>';
@@ -76,14 +81,14 @@ class App {
         // SF2 File Loading
         document.getElementById('sf2-file-input').addEventListener('change', async (e) => {
             if (e.target.files.length > 0) {
-                document.getElementById('status-display').textContent = "Loading SF2...";
+                this.showToast('Loading SoundFont...');
                 const success = await this.audio.loadSF2(e.target.files[0]);
                 if (success) {
-                    document.getElementById('status-display').textContent = "SF2 Loaded";
+                    this.showToast('SoundFont loaded');
                     this.populatePresetSelector();
                     this.validateTracksAgainstSF2();
                 } else {
-                    document.getElementById('status-display').textContent = "SF2 Load Failed";
+                    this.showToast('Could not load the SoundFont');
                 }
             }
             e.target.value = '';
@@ -92,25 +97,8 @@ class App {
         document.getElementById('preset-selector').addEventListener('change', (e) => {
             const idx = parseInt(e.target.value);
             if (!isNaN(idx) && idx >= 0) {
-                const presets = this.audio.getPresets();
-                if (presets && presets[idx]) {
-                    const preset = presets[idx];
-                    
-                    console.log(`[UI] Selected Preset Index: ${idx}, Name: ${preset.name}`);
-                    console.log(`[UI] Bank: ${preset.bank}, Program: ${preset.preset}`);
-
-                    // Update Track
-                    const track = this.songData.tracks[this.currentTrackId];
-                    track.bank = preset.bank;
-                    track.program = preset.preset;
-                    track.presetIndex = idx;
-
-                    this.audio.selectPreset(this.currentTrackId, idx);
-                    console.log(`[UI] Track ${this.currentTrackId + 1} updated to Bank:${track.bank} Program:${track.program} Index:${idx}`);
-
-                    // Preview Note
-                    this.audio.playNote(60, 0.5, this.currentTrackId);
-                }
+                this.saveState();
+                this.setTrackPreset(this.currentTrackId, idx);
             }
         });
 
@@ -164,6 +152,9 @@ class App {
     // Push volume / pan / tone of every track to the audio engine
     applyAllTrackSettings() {
         for (const track of this.songData.tracks) {
+            if (this.audio.hasSoundBank()) {
+                this.audio.setTrackInstrument(track.id, track.bank || 0, track.program || 0, track.presetIndex ?? -1);
+            }
             this.audio.setTrackVolume(track.id, track.volume);
             this.audio.setTrackPan(track.id, track.pan);
             this.audio.setTrackTone(track.id, track.tone);
@@ -199,14 +190,34 @@ class App {
             forEachSongNote(this.songData, fromBeat, toBeat, fn);
             return;
         }
-        // Pattern view plays the edited pattern even if its track is muted
+        // Pattern view: the edited pattern, plus the other tracks at the clip the pattern was
+        // opened from (the same place the ghost notes show). Mute / solo apply as in the song view.
         const pattern = this.currentPattern;
         if (!pattern) return;
-        for (const note of pattern.notes) {
-            if (note.time >= fromBeat && note.time < toBeat && note.time < pattern.length) {
-                fn(pattern.trackId, note.time, note);
+        const song = this.songData;
+        if (isTrackAudible(song, song.tracks[pattern.trackId])) {
+            for (const note of pattern.notes) {
+                if (note.time >= fromBeat && note.time < toBeat && note.time < pattern.length) {
+                    fn(pattern.trackId, note.time, note);
+                }
             }
         }
+        if (!this.isPatternInContext()) return;
+        const offset = this.patternContextStart;
+        forEachSongNote(song, offset + fromBeat, offset + toBeat, (trackId, time, note) => {
+            if (trackId !== pattern.trackId) fn(trackId, time - offset, note);
+        });
+    }
+
+    // True when the edited pattern is placed at patternContextStart (so it has a place in the song)
+    isPatternInContext() {
+        const pattern = this.currentPattern;
+        return !!pattern && this.songData.clips.some(c => c.patternId === pattern.id && Math.abs(c.start - this.patternContextStart) < 1e-6);
+    }
+
+    // Song beat at which the current view's timeline starts (tempo changes are looked up there)
+    getPlaybackBeatOffset() {
+        return this.view === 'pattern' && this.isPatternInContext() ? this.patternContextStart : 0;
     }
 
     // Notes of other tracks that sound while the edited pattern plays in the song (pattern-local times)
@@ -327,22 +338,81 @@ class App {
     }
 
     updateViewUI() {
-        document.getElementById('tab-song').classList.toggle('active', this.view === 'song');
-        document.getElementById('tab-pattern').classList.toggle('active', this.view === 'pattern');
-        const label = document.getElementById('tab-pattern-label');
-        const pattern = this.currentPattern;
-        if (pattern) {
-            const bars = +(pattern.length / this.getPatternBarLength()).toFixed(2);
-            const trackName = this.songData.tracks[pattern.trackId].name;
-            label.textContent = `${trackName} · ${pattern.name} · ${bars} bar${bars === 1 ? '' : 's'}`;
-        } else {
-            label.textContent = '';
-        }
+        document.getElementById('tab-song').classList.toggle('on', this.view === 'song');
+        document.getElementById('tab-pattern').classList.toggle('on', this.view === 'pattern');
+        // Instrument can be picked from the screen in the song view only
+        document.querySelector('.oled-title').classList.toggle('pick', this.view === 'song');
+        document.getElementById('preset-selector').style.pointerEvents = this.view === 'song' ? '' : 'none';
+
+        const hints = this.view === 'song'
+            ? [['A', 'Place or open'], ['B', 'Copy, hold to delete'], ['X', 'Play'], ['Y', 'Select'],
+                ['Start', 'Next track'], ['Start + Y', 'Tone'], ['Select', 'Hold for pattern']]
+            : [['A', 'Add note, hold to edit'], ['B', 'Copy, hold to delete'], ['X', 'Play'], ['Y', 'Select'],
+                ['L2', 'Grid'], ['Start + Y', 'Tone'], ['Select', 'Hold for song']];
+        document.getElementById('legend').innerHTML =
+            hints.map(([key, text]) => `<span><b>${key}</b>${text}</span>`).join('');
+        this.oledCache = null;
     }
 
-    setCursorInfo(text) {
-        const el = document.getElementById('cursor-info');
-        if (el && el.textContent !== text) el.textContent = text;
+    // Parameter screen at the top: what the cursor points at in the current view
+    updateOled() {
+        let name;
+        let sub;
+        let params;
+        const pan = (p) => Math.abs(p) < 0.05 ? 'C' : `${p < 0 ? 'L' : 'R'}${Math.round(Math.abs(p) * 100)}`;
+
+        if (this.view === 'song') {
+            const track = this.songData.tracks[this.currentTrackId];
+            const beat = this.transport.barToBeat(this.songState.cursorBar);
+            const clip = clipAt(this.songData, this.currentTrackId, beat);
+            const pattern = clip ? getPattern(this.songData, clip.patternId) : null;
+            const bar = this.isPlaying
+                ? Math.floor(this.transport.beatToBar(this.cardinalTime)) + 1
+                : this.songState.cursorBar + 1;
+            name = `<b>${escapeHtml(track.name)}</b>`;
+            sub = `T${track.id + 1}, ${escapeHtml(this.getInstrumentName(track))}`;
+            params = [
+                ['Bar', bar],
+                ['Volume', Math.round(track.volume * 100)],
+                ['Pan', pan(track.pan)],
+                ['Pattern', pattern ? escapeHtml(pattern.name) : '-'],
+                ['Tempo', this.transport.getBpmAt(beat), 'minor']
+            ];
+            if (this.songState.clipboard) params.push(['Clipboard', this.songState.clipboard.length, 'minor']);
+        } else {
+            const pattern = this.currentPattern;
+            if (!pattern) return;
+            const track = this.songData.tracks[pattern.trackId];
+            const input = this.input;
+            const note = input.getNoteAtCursor();
+            const bars = +(pattern.length / this.getPatternBarLength()).toFixed(2);
+            const duration = note ? note.duration : (input.lastNoteDuration || 4 / this.ui.gridDivisions);
+            name = `<b>${escapeHtml(track.name)}</b><i class="pipe"></i><b class="pat">${escapeHtml(pattern.name)}</b>`;
+            sub = `${bars} bar${bars === 1 ? '' : 's'}`;
+            params = [
+                ['Note', input.midiToNoteName(input.state.cursor.pitch)],
+                ['Velocity', Math.round(note ? (note.velocity || 100) : input.lastNoteVelocity)],
+                ['Length', beatsToNoteValue(duration)],
+                ['Grid', `1/${this.ui.gridDivisions}`],
+                ['Position', input.formatCursorPosition(), 'minor']
+            ];
+        }
+
+        const html = params.map(([label, value, cls]) =>
+            `<div class="param ${cls || ''}"><span>${label}</span><b>${value}</b></div>`).join('');
+        const key = name + sub + html;
+        if (key === this.oledCache) return;
+        this.oledCache = key;
+        document.getElementById('oled-name').innerHTML = name;
+        document.getElementById('oled-sub').innerHTML = sub;
+        document.getElementById('oled-params').innerHTML = html;
+    }
+
+    // Shows the browser/OS output delay; large values usually mean Bluetooth audio or power saving
+    showAudioLatency() {
+        const ms = this.audio.getOutputLatencyMs();
+        if (ms === null) return;
+        this.showToast(`Audio output latency: ${ms} ms`);
     }
 
     saveState() {
@@ -477,6 +547,8 @@ class App {
             'load-sf2': () => document.getElementById('sf2-file-input').click(),
             'load-sfz': () => document.getElementById('sfz-file-input').click(),
             'controller-map': () => this.openMappingModal(),
+            'marker-prev': () => this.navigateToPrevMarker(),
+            'marker-next': () => this.navigateToNextMarker(),
             'add-marker': () => this.addMarker(),
             'add-bpm': () => this.addBpm(),
             'add-timesig': () => this.addTimeSig()
@@ -490,20 +562,7 @@ class App {
     }
 
     setupTransportButtons() {
-        document.getElementById('btn-play').addEventListener('click', () => this.togglePlayback(this.getPlayStartBeat()));
-        document.getElementById('btn-stop').addEventListener('click', () => {
-            if (this.isPlaying) this.togglePlayback(0);
-        });
-        document.getElementById('btn-marker-prev').addEventListener('click', () => this.navigateToPrevMarker());
-        document.getElementById('btn-marker-next').addEventListener('click', () => this.navigateToNextMarker());
         document.getElementById('btn-tone').addEventListener('click', () => this.toneEditor.open());
-    }
-
-    updateTransportUI() {
-        const playBtn = document.getElementById('btn-play');
-        if (playBtn.classList.contains('active') !== this.isPlaying) {
-            playBtn.classList.toggle('active', this.isPlaying);
-        }
     }
 
     addMarker() {
@@ -648,7 +707,7 @@ class App {
             const instrumentName = this.getInstrumentName(track);
 
             tr.innerHTML = `
-                <td><span class="track-swatch" style="background: ${trackColor(track.id)}"></span>${track.id + 1}</td>
+                <td>T${track.id + 1}</td>
                 <td>${track.name}</td>
                 <td>${instrumentName}</td>
                 <td>${Math.round(track.volume * 100)}%</td>
@@ -683,6 +742,19 @@ class App {
 
             tbody.appendChild(tr);
         });
+    }
+
+    // Change a track's instrument (index into audio.getPresets()) and play a short preview
+    setTrackPreset(trackId, presetIndex, preview = true) {
+        const preset = this.audio.getPresets()[presetIndex];
+        if (!preset) return;
+        const track = this.songData.tracks[trackId];
+        track.bank = preset.bank;
+        track.program = preset.preset;
+        track.presetIndex = presetIndex;
+        this.audio.selectPreset(trackId, presetIndex);
+        if (trackId === this.currentTrackId) this.updateTrackUI();
+        if (preview) this.audio.playNote(60, 0.5, trackId);
     }
 
     getInstrumentName(track) {
@@ -789,8 +861,6 @@ class App {
     }
 
     loop(timestamp) {
-        this.input.update();
-
         if (this.isPlaying) {
             this.scheduler.update();
             this.cardinalTime = this.scheduler.currentBeat();
@@ -801,7 +871,7 @@ class App {
             }
         }
 
-        this.updateTransportUI();
+        this.updateOled();
         if (this.view === 'song') {
             this.songView.draw(this.cardinalTime);
         } else {
@@ -1018,3 +1088,18 @@ class App {
 window.addEventListener('DOMContentLoaded', () => {
     window.app = new App();
 });
+
+// Note length in beats as a note value, e.g. 1.5 -> "3/8", 4 -> "1"
+function beatsToNoteValue(beats) {
+    let num = Math.round(beats / 4 * 64);
+    let den = 64;
+    while (num % 2 === 0 && den > 1) {
+        num /= 2;
+        den /= 2;
+    }
+    return den === 1 ? String(num) : `${num}/${den}`;
+}
+
+function escapeHtml(text) {
+    return String(text).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}

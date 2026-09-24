@@ -1,5 +1,9 @@
-import { theme, font, withAlpha, trackColor } from './theme.js';
+import { theme, font, withAlpha } from './theme.js';
 
+/**
+ * Pattern view: piano roll of the edited pattern (canvas).
+ * Rows are pitches (127 at the top), columns are beats. The ruler overlays the top edge.
+ */
 export class UIManager {
     constructor(app) {
         this.app = app;
@@ -12,12 +16,12 @@ export class UIManager {
 
         // View State
         this.scrollX = 0; // Time in pixels
-        this.scrollY = 0; // Pitch pixels (calculated from C8 down usually)
+        this.scrollY = 0; // Pitch pixels (0 = pitch 127 at the top)
 
         // Settings
         this.beatWidth = 50; // Pixels per beat/quarter note
         this.keyHeight = 20; // Pixels per key
-        this.headerHeight = 30; // Ruler height
+        this.headerHeight = 24; // Ruler height
 
         // Grid Settings
         this.gridDivisions = 4; // Divisions per bar (4 beats). 4 = quarter notes.
@@ -26,35 +30,25 @@ export class UIManager {
         this.cursorTime = 0; // In beats
         this.cursorPitch = 60; // MIDI Note Number (Middle C)
         this.hasCursor = false;
-        this.pianoKeyWidth = 40;
+        this.pianoKeyWidth = 44;
     }
 
     setGridDivisions(divisions) {
         const oldBeatWidth = this.beatWidth;
         this.gridDivisions = divisions;
 
-        // Dynamic Scaling
-        // Ensure minimal visibility for grid lines
-        const step = 4 / divisions; // Beats per grid line
-        const MIN_PIXELS_PER_GRID = 8; // Minimum pixels between grid lines
-
-        // Exception: 1/16 grid uses 1/8 grid's scaling factor to maintain same measure width
-        let scalingDivisions = divisions;
-        if (divisions === 16) {
-            scalingDivisions = 8;
-        }
+        // Keep grid lines at least MIN_PIXELS_PER_GRID apart.
+        // 1/16 uses the 1/8 scaling so a measure keeps the same width.
+        const MIN_PIXELS_PER_GRID = 8;
+        const scalingDivisions = divisions === 16 ? 8 : divisions;
         const scalingStep = 4 / scalingDivisions;
-
         this.beatWidth = Math.max(50, MIN_PIXELS_PER_GRID / scalingStep);
 
-        // Adjust scrollX to keep cursor at the same screen position
+        // Keep the cursor at the same screen position
         if (this.hasCursor) {
-            const cursorTime = this.cursorTime;
-            this.scrollX += cursorTime * (this.beatWidth - oldBeatWidth);
+            this.scrollX += this.cursorTime * (this.beatWidth - oldBeatWidth);
             if (this.scrollX < 0) this.scrollX = 0;
         }
-
-        console.log(`Grid: ${divisions}, BeatWidth: ${this.beatWidth}, ScrollX: ${this.scrollX}`);
     }
 
     resize() {
@@ -68,21 +62,28 @@ export class UIManager {
         this.canvas.height = this.height * dpr;
         this.canvas.style.width = `${this.width}px`;
         this.canvas.style.height = `${this.height}px`;
-        this.ctx.scale(dpr, dpr);
+        this.ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 
-        // Center view on Middle C initially if needed
-        // For now, let's just ensure we render something
+        // Center view on Middle C initially
         this.scrollY = (127 - 60) * this.keyHeight - this.height / 2;
     }
 
+    // Screen position helpers
+    timeToX(time) {
+        return time * this.beatWidth - this.scrollX + this.pianoKeyWidth;
+    }
+
+    pitchToY(pitch) {
+        return (127 - pitch) * this.keyHeight - this.scrollY;
+    }
+
     draw(inputState, playheadTime = -1) {
-        // Get data
+        const ctx = this.ctx;
         const pattern = this.app.currentPattern;
         const notes = pattern ? pattern.notes : [];
         const selectedNotes = inputState ? inputState.selectedNotes || [] : [];
         const selectionStart = inputState ? inputState.selectionStart : null;
 
-        // Update local cursor state
         if (inputState && inputState.cursor) {
             this.hasCursor = true;
             this.cursorTime = inputState.cursor.time;
@@ -91,462 +92,240 @@ export class UIManager {
             this.hasCursor = false;
         }
 
-        // Auto-scroll Playhead
-        if (this.app.isPlaying && playheadTime >= 0) {
-            const playheadScreenX = playheadTime * this.beatWidth - this.scrollX + this.pianoKeyWidth;
-            if (playheadScreenX > this.width) {
-                this.scrollX = playheadTime * this.beatWidth;
-            } else if (playheadScreenX < this.pianoKeyWidth) {
-                this.scrollX = playheadTime * this.beatWidth;
-            }
-            if (this.scrollX < 0) this.scrollX = 0;
-        }
+        this.autoScroll(playheadTime);
 
-        // Auto-scroll Cursor (when cursor moves near edges)
-        if (this.hasCursor && inputState && inputState.cursor) {
-            const cursorScreenX = this.cursorTime * this.beatWidth - this.scrollX + this.pianoKeyWidth;
-            const cursorScreenY = (127 - this.cursorPitch) * this.keyHeight - this.scrollY;
-            
-            // Scroll margin from edges
-            const marginX = 50;
-            const marginY = 50;
-            
-            // Scroll Right
-            if (cursorScreenX > this.width - marginX) {
-                this.scrollX = this.cursorTime * this.beatWidth - marginX;
-            }
-            // Scroll Left
-            if (cursorScreenX < this.pianoKeyWidth + marginX) {
-                this.scrollX = this.cursorTime * this.beatWidth - this.pianoKeyWidth - marginX;
-            }
-            // Scroll Down (higher pitch = lower on screen)
-            if (cursorScreenY > this.height - marginY) {
-                this.scrollY = (127 - this.cursorPitch) * this.keyHeight - this.height + marginY;
-            }
-            // Scroll Up (lower pitch = higher on screen)
-            if (cursorScreenY < marginY) {
-                this.scrollY = (127 - this.cursorPitch) * this.keyHeight - marginY;
-            }
-            
-            // Ensure scroll bounds
-            if (this.scrollX < 0) this.scrollX = 0;
-            if (this.scrollY < 0) this.scrollY = 0;
-        }
+        ctx.fillStyle = theme.body;
+        ctx.fillRect(0, 0, this.width, this.height);
 
-        // Clear
-        this.ctx.fillStyle = theme.surface2;
-        this.ctx.fillRect(0, 0, this.width, this.height);
-
-        // Draw Grid
         this.drawGrid();
-
-        // Draw Ghost Notes (other tracks playing at the same place in the song)
         this.drawGhostNotes(this.app.getGhostNotes());
 
-        // Shade the area after the end of the pattern
+        // Area after the end of the pattern (notes there are not played)
         if (pattern) {
-            const endX = pattern.length * this.beatWidth - this.scrollX + this.pianoKeyWidth;
+            const endX = this.timeToX(pattern.length);
             if (endX < this.width) {
                 const x = Math.max(endX, this.pianoKeyWidth);
-                this.ctx.fillStyle = withAlpha(theme.bg, 0.6);
-                this.ctx.fillRect(x, 0, this.width - x, this.height);
-                this.ctx.strokeStyle = theme.accent;
-                this.ctx.lineWidth = 2;
-                this.ctx.beginPath();
-                this.ctx.moveTo(endX, 0);
-                this.ctx.lineTo(endX, this.height);
-                this.ctx.stroke();
+                ctx.fillStyle = withAlpha(theme.ink, 0.12);
+                ctx.fillRect(x, 0, this.width - x, this.height);
+                ctx.fillStyle = theme.ink;
+                ctx.fillRect(endX - 0.5, 0, 1, this.height);
             }
         }
 
-        // Draw Selection Range (if selecting)
         if (selectionStart && inputState.cursor) {
             this.drawSelectionRange(selectionStart, inputState.cursor);
         }
 
-        // Draw Notes
         this.drawNotes(notes, selectedNotes);
 
-        // Draw Cursor
         if (inputState && inputState.cursor) {
             this.drawCursor(inputState.cursor);
         }
 
-        // Draw Playhead
-        if (playheadTime >= 0) {
-            const x = playheadTime * this.beatWidth - this.scrollX + this.pianoKeyWidth;
-            if (x >= 0 && x <= this.width) {
-                this.ctx.strokeStyle = theme.playhead;
-                this.ctx.lineWidth = 2;
-                this.ctx.beginPath();
-                this.ctx.moveTo(x, 0);
-                this.ctx.lineTo(x, this.height);
-                this.ctx.stroke();
+        if (this.app.isPlaying && playheadTime >= 0) {
+            const x = this.timeToX(playheadTime);
+            if (x >= this.pianoKeyWidth && x <= this.width) {
+                ctx.fillStyle = theme.trig;
+                ctx.fillRect(x - 1, 0, 2, this.height);
             }
         }
 
-        // Draw Piano Keys
         this.drawPianoKeys();
-
-        // Draw Ruler Overlay
         this.drawRuler();
     }
 
+    autoScroll(playheadTime) {
+        // Follow the playhead
+        if (this.app.isPlaying && playheadTime >= 0) {
+            const x = this.timeToX(playheadTime);
+            if (x > this.width || x < this.pianoKeyWidth) {
+                this.scrollX = Math.max(0, playheadTime * this.beatWidth);
+            }
+        }
+
+        // Keep the cursor in view
+        if (this.hasCursor) {
+            const cursorX = this.timeToX(this.cursorTime);
+            const cursorY = this.pitchToY(this.cursorPitch);
+            const marginX = 50;
+            const marginY = 50;
+            if (cursorX > this.width - marginX) {
+                this.scrollX = this.cursorTime * this.beatWidth - marginX;
+            }
+            if (cursorX < this.pianoKeyWidth + marginX) {
+                this.scrollX = this.cursorTime * this.beatWidth - this.pianoKeyWidth - marginX;
+            }
+            if (cursorY > this.height - marginY) {
+                this.scrollY = (127 - this.cursorPitch) * this.keyHeight - this.height + marginY;
+            }
+            if (cursorY < this.headerHeight + marginY) {
+                this.scrollY = (127 - this.cursorPitch) * this.keyHeight - this.headerHeight - marginY;
+            }
+            if (this.scrollX < 0) this.scrollX = 0;
+            if (this.scrollY < 0) this.scrollY = 0;
+        }
+    }
+
     drawSelectionRange(start, end) {
+        const ctx = this.ctx;
         const minTime = Math.min(start.time, end.time);
         const maxTime = Math.max(start.time, end.time);
         const minPitch = Math.round(Math.min(start.pitch, end.pitch));
         const maxPitch = Math.round(Math.max(start.pitch, end.pitch));
 
-        const x = minTime * this.beatWidth - this.scrollX + this.pianoKeyWidth;
-        const y = (127 - maxPitch) * this.keyHeight - this.scrollY;
-        const w = (maxTime - minTime + 4 / this.gridDivisions) * this.beatWidth; // Expand to cover grid slot roughly
-        // Ideally selection should be inclusive of the full grid slot
-        // But for now point-based selection logic might define size differently
-        // Reverting w calc safely:
-        // const w = (Math.abs(start.time - end.time) + ... ) 
-        // Let's stick to simple box for now, maybe refined later.
-
-        // Actually, let's use the width of the current note duration or grid step
         const step = 4 / this.gridDivisions;
-        const width = (maxTime - minTime) * this.beatWidth + (step * this.beatWidth);
+        const x = this.timeToX(minTime);
+        const y = this.pitchToY(maxPitch);
+        const w = (maxTime - minTime + step) * this.beatWidth;
         const h = (maxPitch - minPitch + 1) * this.keyHeight;
 
-        this.ctx.fillStyle = withAlpha(theme.selection, 0.15);
-        this.ctx.fillRect(x, y, width, h);
-
-        this.ctx.strokeStyle = theme.selection;
-        this.ctx.lineWidth = 2;
-        this.ctx.setLineDash([5, 5]);
-        this.ctx.strokeRect(x, y, width, h);
-        this.ctx.setLineDash([]);
+        ctx.fillStyle = withAlpha(theme.trig, 0.1);
+        ctx.fillRect(x, y, w, h);
+        ctx.strokeStyle = theme.trig;
+        ctx.lineWidth = 1.5;
+        ctx.setLineDash([5, 4]);
+        ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
+        ctx.setLineDash([]);
     }
 
     drawNotes(notes, selectedNotes = []) {
-        const pattern = this.app.currentPattern;
-        const color = trackColor(pattern ? pattern.trackId : 0);
-        // For prototype, simple loop is fine
+        const ctx = this.ctx;
         for (const note of notes) {
-            const x = note.time * this.beatWidth - this.scrollX + this.pianoKeyWidth;
-            const y = (127 - note.pitch) * this.keyHeight - this.scrollY;
-
-            // Basic culling
-            if (x + this.beatWidth < 0 || x > this.width || y + this.keyHeight < 0 || y > this.height) continue;
-
+            const x = this.timeToX(note.time);
+            const y = this.pitchToY(note.pitch);
             const w = (note.duration || 1) * this.beatWidth;
+            if (x + w < 0 || x > this.width || y + this.keyHeight < 0 || y > this.height) continue;
 
-            // Check if selected
-            const isSelected = selectedNotes.includes(note);
-
+            // Velocity is shown as ink density
             const velocity = note.velocity !== undefined ? note.velocity : 100;
-            const opacity = 0.3 + (0.7 * (velocity / 127));
-
-            if (isSelected) {
-                this.ctx.fillStyle = withAlpha(theme.selection, opacity);
-                this.ctx.strokeStyle = theme.text;
-            } else {
-                this.ctx.fillStyle = withAlpha(color, opacity);
-                this.ctx.strokeStyle = color;
-            }
-
-            this.ctx.lineWidth = isSelected ? 2 : 1;
-            this.ctx.fillRect(x + 1, y + 1, w - 2, this.keyHeight - 2);
-            this.ctx.strokeRect(x + 1, y + 1, w - 2, this.keyHeight - 2);
+            ctx.globalAlpha = selectedNotes.includes(note) ? 1 : 0.35 + velocity / 195;
+            ctx.fillStyle = selectedNotes.includes(note) ? theme.trig : theme.ink;
+            ctx.fillRect(x + 1, y + 2, w - 2, this.keyHeight - 4);
         }
+        ctx.globalAlpha = 1;
     }
 
     drawGhostNotes(notes) {
-        this.ctx.fillStyle = withAlpha(theme.textMuted, 0.18);
-        this.ctx.strokeStyle = withAlpha(theme.textMuted, 0.35);
-        this.ctx.lineWidth = 1;
-
+        const ctx = this.ctx;
+        ctx.strokeStyle = theme.ghost;
+        ctx.lineWidth = 1;
         for (const note of notes) {
-            const x = note.time * this.beatWidth - this.scrollX + this.pianoKeyWidth;
-            const y = (127 - note.pitch) * this.keyHeight - this.scrollY;
-
-            if (x + this.beatWidth < 0 || x > this.width || y + this.keyHeight < 0 || y > this.height) continue;
-
+            const x = this.timeToX(note.time);
+            const y = this.pitchToY(note.pitch);
             const w = (note.duration || 1) * this.beatWidth;
-
-            this.ctx.fillRect(x + 1, y + 1, w - 2, this.keyHeight - 2);
-            this.ctx.strokeRect(x + 1, y + 1, w - 2, this.keyHeight - 2);
+            if (x + w < 0 || x > this.width || y + this.keyHeight < 0 || y > this.height) continue;
+            ctx.strokeRect(x + 1.5, y + 2.5, w - 3, this.keyHeight - 5);
         }
     }
 
     drawGrid() {
-        // Calculate step size in beats based on gridDivisions (divisions per bar of 4 beats)
-        const step = 4 / this.gridDivisions;
+        const ctx = this.ctx;
+        const left = this.pianoKeyWidth;
 
+        // Pitch rows
+        ctx.fillStyle = theme.lane;
+        ctx.fillRect(left, 0, this.width - left, this.height);
+        const topNote = 127 - Math.floor(this.scrollY / this.keyHeight);
+        const bottomNote = 127 - Math.floor((this.scrollY + this.height) / this.keyHeight);
+        for (let note = topNote; note >= Math.max(0, bottomNote); note--) {
+            const y = this.pitchToY(note);
+            if (this.isBlackKey(note)) {
+                ctx.fillStyle = withAlpha(theme.ink, 0.05);
+                ctx.fillRect(left, y, this.width - left, this.keyHeight);
+            }
+            ctx.fillStyle = note % 12 === 0 ? theme.line : theme.rowLine;
+            ctx.fillRect(left, y + this.keyHeight - 1, this.width - left, 1);
+        }
+
+        // Time columns: grid steps, beats and bars
+        const step = 4 / this.gridDivisions;
         const startBeat = Math.floor(this.scrollX / this.beatWidth);
         const endBeat = startBeat + Math.ceil(this.width / this.beatWidth) + 1;
-
-
-
-        // Draw Vertical Lines (Time/Beats)
-        this.ctx.lineWidth = 0.3;
-
-        // Align start to grid
-        const gridStart = Math.floor(startBeat / step) * step;
-
-        // Draw Background Highlights for Even Beats (2nd, 4th, etc.) relative to Bar Start
-        this.ctx.fillStyle = withAlpha(theme.text, 0.025);
-
-        // Loop beats for highlights
-        for (let b = Math.floor(startBeat); b < endBeat; b++) {
-            // Find which bar this beat belongs to to calculate relative index
-            // This is slightly complex with variable time signatures effectively.
-            // Simplified approach: Ask transport for bar context or just checking modulo?
-            // "Regardless of time signature, always highlight even beats of the bar"
-
-            // We need to know "Beat Index in Bar" (0-based)
-            // Implementation: Scan backwards from 'b' to find the last bar start?
-            // Or more efficiently, transport could return { beatInBar, barNum } ?
-            // Let's implement a helper properly?
-
-            // Since we don't have helper yet, let's iterate bars from 0?
-            // Expensive.
-            // Let's assume constant time signature for now within the view or use simple scan?
-            // No, user requested "variable" support.
-
-            // Optimization: Transport likely has sparse TimeSig map.
-            // We can find the active TimeSig at 'b'.
-            // But we need to know the phase offset from the TimeSig change point.
-
-            const ts = this.app.transport.getTimeSigAt(b);
-            // Calculate beat index relative to the TimeSig change beat
-            const relBeat = b - ts.beat;
-            const beatsPerBar = ts.num * (4 / ts.den);
-
-            // Current beat index in the sequence of bars starting from ts.beat
-            const beatInBar = relBeat % beatsPerBar;
-
-            // "Even beats" means 2nd (index 1), 4th (index 3), etc.
-            // check if floor(beatInBar) is odd (1, 3, 5...)
-            // Note: beatInBar is float if 'b' is float? 'b' here is loop int iterator.
-
-            // Warning: Floating point precision.
-            // beatInBar should be close to integer.
-            const beatIndex = Math.round(beatInBar);
-
-            if (beatIndex % 2 === 1) { // 1 (2nd beat), 3 (4th beat)...
-                const x = b * this.beatWidth - this.scrollX + this.pianoKeyWidth;
-                this.ctx.fillRect(x, 0, this.beatWidth, this.height);
-            }
-        }
-
-        for (let t = gridStart; t < endBeat; t += step) {
-            const x = t * this.beatWidth - this.scrollX + this.pianoKeyWidth;
-
-            // Avoid drawing off-screen too much
-            if (x < -10) continue;
-
-            this.ctx.beginPath();
-
-            // Check if Bar Start
+        const firstLine = Math.floor(startBeat / step) * step;
+        for (let t = firstLine; t < endBeat; t += step) {
+            const x = Math.round(this.timeToX(t));
+            if (x < left) continue;
             const isBar = this.app.transport.isBarStart(t);
-
-            if (isBar) {
-                this.ctx.strokeStyle = theme.gridBar; // Bar line
-                this.ctx.lineWidth = 2;
-            } else {
-                this.ctx.strokeStyle = theme.gridLine; // Beat/Subdivision line
-                this.ctx.lineWidth = 0.3;
-            }
-
-            this.ctx.moveTo(x, 0);
-            this.ctx.lineTo(x, this.height);
-            this.ctx.stroke();
-        }
-
-
-
-        // Draw Horizontal Lines (Pitch)
-        // Standard MIDI range 0-127
-        // Let's assume Top is 127
-        const startNote = 127 - Math.floor((this.scrollY) / this.keyHeight);
-        const endNote = 127 - Math.floor((this.scrollY + this.height) / this.keyHeight);
-
-        // Note: Rendering optimization needed later, just drawing visible range
-        for (let note = 127; note >= 0; note--) {
-            const y = (127 - note) * this.keyHeight - this.scrollY;
-
-            if (y < -this.keyHeight || y > this.height) continue;
-
-            // Draw Background for Black Keys
-            const isBlack = this.isBlackKey(note);
-            if (isBlack) {
-                this.ctx.fillStyle = withAlpha(theme.bg, 0.35);
-                this.ctx.fillRect(this.pianoKeyWidth, y, this.width - this.pianoKeyWidth, this.keyHeight);
-            }
-
-            // Line - Octave lines (B notes) are thicker
-            this.ctx.strokeStyle = note % 12 === 11 ? theme.gridBar : theme.gridLine;
-            if (note % 12 === 11) {
-                this.ctx.lineWidth = 1.0; // Thicker line for octave boundaries
-            } else {
-                this.ctx.lineWidth = 0.5;
-            }
-            this.ctx.beginPath();
-            this.ctx.moveTo(this.pianoKeyWidth, y);
-            this.ctx.lineTo(this.width, y);
-            this.ctx.stroke();
+            const isBeat = Math.abs(t - Math.round(t)) < 1e-6;
+            ctx.fillStyle = isBar ? theme.ink : (isBeat ? theme.line : withAlpha(theme.line, 0.55));
+            ctx.fillRect(x, 0, 1, this.height);
         }
     }
 
     drawCursor(cursor) {
-        // Cursor is defined by Time (beats) and Pitch (int)
-        const x = cursor.time * this.beatWidth - this.scrollX + this.pianoKeyWidth;
-        const y = (127 - cursor.pitch) * this.keyHeight - this.scrollY;
-
-        const step = 4 / this.gridDivisions;
-        const w = step * this.beatWidth;
-
-        this.ctx.fillStyle = withAlpha(theme.accent, 0.45);
-        this.ctx.fillRect(x, y, w, this.keyHeight);
-
-        this.ctx.strokeStyle = theme.accent;
-        this.ctx.lineWidth = 2;
-        this.ctx.strokeRect(x, y, w, this.keyHeight);
+        const ctx = this.ctx;
+        const x = this.timeToX(cursor.time);
+        const y = this.pitchToY(cursor.pitch);
+        const w = (4 / this.gridDivisions) * this.beatWidth;
+        ctx.strokeStyle = theme.trig;
+        ctx.lineWidth = 2;
+        ctx.strokeRect(x - 1, y, w + 2, this.keyHeight);
     }
 
     drawRuler() {
-        // Corner Box
-        this.ctx.fillStyle = theme.surface1;
-        this.ctx.fillRect(0, 0, this.pianoKeyWidth, this.headerHeight);
+        const ctx = this.ctx;
+        const h = this.headerHeight;
+        const left = this.pianoKeyWidth;
+        const transport = this.app.transport;
 
-        // Overlay background
-        this.ctx.fillStyle = withAlpha(theme.surface1, 0.95);
-        this.ctx.fillRect(this.pianoKeyWidth, 0, this.width - this.pianoKeyWidth, this.headerHeight);
+        ctx.fillStyle = theme.body;
+        ctx.fillRect(0, 0, this.width, h);
+        ctx.fillStyle = theme.ink;
+        ctx.fillRect(left, h - 1, this.width - left, 1);
 
-        this.ctx.strokeStyle = theme.border;
-        this.ctx.beginPath();
-        this.ctx.moveTo(0, this.headerHeight);
-        this.ctx.lineTo(this.width, this.headerHeight);
-        this.ctx.stroke();
-
-        // Draw Loop Marker (Clamped to stay visible on screen)
+        // Loop region (red bar along the top)
         if (this.app.loopRegion) {
-            const rawStartX = this.app.loopRegion.start * this.beatWidth - this.scrollX + this.pianoKeyWidth;
-            const rawEndX = this.app.loopRegion.end * this.beatWidth - this.scrollX + this.pianoKeyWidth;
-            const width = rawEndX - rawStartX;
-            
-            // Calculate visible bounds
-            const visibleStartX = Math.max(this.pianoKeyWidth, rawStartX);
-            const visibleEndX = Math.min(this.width, rawEndX);
-            const visibleWidth = Math.max(0, visibleEndX - visibleStartX);
-            
-            // Only draw if visible
-            if (visibleWidth > 0) {
-                this.ctx.fillStyle = this.app.isLooping ? withAlpha(theme.loop, 0.3) : withAlpha(theme.surface3, 0.6);
-                this.ctx.fillRect(visibleStartX, 0, visibleWidth, this.headerHeight);
-                
-                this.ctx.strokeStyle = this.app.isLooping ? theme.loop : theme.border;
-                this.ctx.lineWidth = 2;
-                this.ctx.strokeRect(visibleStartX, 0, visibleWidth, this.headerHeight);
+            const x0 = Math.max(left, this.timeToX(this.app.loopRegion.start));
+            const x1 = Math.min(this.width, this.timeToX(this.app.loopRegion.end));
+            if (x1 > x0) {
+                ctx.fillStyle = this.app.isLooping ? theme.trig : theme.graphite;
+                ctx.fillRect(x0, 0, x1 - x0, 3);
             }
         }
 
-        // Draw Markers
-        const markers = this.app.transport.markerMap;
-        if (markers && markers.length > 0) {
-            this.ctx.font = font(12, 'bold');
-            this.ctx.textAlign = 'left';
-            
-            for (const marker of markers) {
-                // Draw marker to the right of measure number (offset by 25px)
-                const localBeat = marker.beat - this.app.patternContextStart;
-                const x = localBeat * this.beatWidth - this.scrollX + this.pianoKeyWidth + 25;
-                
-                // Only draw if visible
-                if (x >= this.pianoKeyWidth && x <= this.width) {
-                    // Draw marker background
-                    const size = this.headerHeight - 4;
-                    
-                    this.ctx.fillStyle = withAlpha(theme.marker, 0.2);
-                    this.ctx.fillRect(x - 2, 2, size, size);
-                    
-                    this.ctx.strokeStyle = theme.marker;
-                    this.ctx.lineWidth = 1;
-                    this.ctx.strokeRect(x - 2, 2, size, size);
-                    
-                    // Draw marker text
-                    this.ctx.fillStyle = theme.marker;
-                    this.ctx.textAlign = 'center';
-                    this.ctx.fillText(marker.label, x - 2 + size / 2, 20);
-                    this.ctx.textAlign = 'left';
-                }
-            }
-        }
-
-        // Draw Ruler Info
+        // Bar numbers and beat ticks
         const startBeat = Math.floor(this.scrollX / this.beatWidth);
         const endBeat = startBeat + Math.ceil(this.width / this.beatWidth) + 1;
-
-        // Optimize: Iterate by bars? 
-        // We need to iterate all beats to check for bar starts or BPM changes if we want to be safe,
-        // or just iterate visual width.
-        // Let's iterate visual width in steps of 1 beat (display beat numbers)
-
-        this.ctx.font = font(12);
-        this.ctx.textAlign = 'left';
-
-        // To avoid overlapping text, maybe only draw measure numbers on bar starts?
-        // And BPM changes?
-
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'alphabetic';
         for (let b = startBeat; b < endBeat; b++) {
-            const x = b * this.beatWidth - this.scrollX + this.pianoKeyWidth;
-            if (x < -20) continue;
+            const x = Math.round(this.timeToX(b));
+            if (x < left) continue;
+            const context = transport.getMeasureAt(b);
+            if (Math.abs(context.beatInBar) < 0.001) {
+                ctx.fillStyle = theme.ink;
+                ctx.fillRect(x, 4, 1, h - 4);
+                ctx.font = font(12);
+                ctx.fillText(String(context.measure), x + 4, h - 7);
 
-            const context = this.app.transport.getMeasureAt(b);
-
-            // Check if bar start
-            const isBarStart = Math.abs(context.beatInBar) < 0.001;
-
-            if (isBarStart) {
-                // Draw Measure Number
-                this.ctx.fillStyle = theme.text;
-                this.ctx.fillText(context.measure.toString(), x + 5, 20);
-
-                // Show BPM/TS only at Measure 1 or if there is a change event at this beat
-                let showInfo = (Math.abs(b) < 0.001); // Always show at beat 0
-
-                // Check for TS Change at this beat
-                if (this.app.transport.timeSigMap.some(e => Math.abs(e.beat - b) < 0.001)) {
-                    showInfo = true;
-                }
-
-                // Check for Tempo Change at this beat
-                if (this.app.transport.tempoMap.some(e => Math.abs(e.beat - b) < 0.001)) {
-                    showInfo = true;
-                }
-
-                if (showInfo) {
-                    // Draw BPM/TS small below measure number
-                    this.ctx.font = font(10);
-                    this.ctx.fillStyle = theme.textMuted;
-                    const bpm = this.app.transport.getBpmAt(b);
+                // Tempo / time signature at the start and where they change
+                const changes = b === 0
+                    || transport.timeSigMap.some(e => Math.abs(e.beat - b) < 0.001)
+                    || transport.tempoMap.some(e => Math.abs(e.beat - b) < 0.001);
+                if (changes) {
+                    ctx.fillStyle = theme.graphite;
+                    ctx.font = font(10);
                     const ts = context.timeSig;
-                    this.ctx.fillText(`${bpm}bpm ${ts.num}/${ts.den}`, x + 20, 20);
+                    ctx.fillText(`${transport.getBpmAt(b)} bpm  ${ts.num}/${ts.den}`, x + 20, h - 7);
                 }
-
-                this.ctx.strokeStyle = theme.borderStrong;
-                this.ctx.beginPath();
-                this.ctx.moveTo(x, 0);
-                this.ctx.lineTo(x, this.headerHeight);
-                this.ctx.stroke();
-
-                // Restore font
-                this.ctx.font = font(12);
             } else {
-                // Draw beat ticks (small)
-                if (b % 1 === 0) { // Full beats
-                    this.ctx.fillStyle = theme.textDim;
-                    this.ctx.fillRect(x, this.headerHeight - 5, 1, 5);
-                    // Optional: Draw beat number (1.2, 1.3...)
-                    // this.ctx.fillText(`${Math.floor(context.beatInBar) + 1}`, x + 2, this.headerHeight - 8);
-                }
+                ctx.fillStyle = theme.line;
+                ctx.fillRect(x, h - 6, 1, 5);
             }
         }
+
+        // Markers live on the song timeline: shift them into pattern-local time
+        ctx.font = font(11, '600');
+        for (const marker of transport.markerMap) {
+            const x = this.timeToX(marker.beat - this.app.patternContextStart);
+            if (x < left || x > this.width) continue;
+            ctx.fillStyle = theme.trig;
+            ctx.fillText(marker.label, x + 4, 11);
+        }
+
+        // Corner above the keyboard
+        ctx.fillStyle = theme.body;
+        ctx.fillRect(0, 0, left, h);
     }
 
     isBlackKey(note) {
@@ -555,39 +334,28 @@ export class UIManager {
     }
 
     drawPianoKeys() {
-        // Draw background for keys column
-        this.ctx.fillStyle = theme.surface1;
-        this.ctx.fillRect(0, 0, this.pianoKeyWidth, this.height);
+        const ctx = this.ctx;
+        const w = this.pianoKeyWidth - 6;
+        ctx.fillStyle = theme.body;
+        ctx.fillRect(0, 0, this.pianoKeyWidth, this.height);
 
-        const startNote = 127 - Math.floor((this.scrollY) / this.keyHeight);
-        const endNote = 127 - Math.floor((this.scrollY + this.height) / this.keyHeight);
-
-        for (let note = startNote; note >= endNote; note--) {
-            const y = (127 - note) * this.keyHeight - this.scrollY;
-            if (y < -this.keyHeight || y > this.height) continue;
-
-            const isBlack = this.isBlackKey(note);
-
-            this.ctx.fillStyle = isBlack ? theme.keyBlack : theme.keyWhite;
-            this.ctx.fillRect(0, y, this.pianoKeyWidth, this.keyHeight);
-
-            this.ctx.strokeStyle = theme.textDim;
-            this.ctx.strokeRect(0, y, this.pianoKeyWidth, this.keyHeight);
-
-            // Label C notes
+        const topNote = 127 - Math.floor(this.scrollY / this.keyHeight);
+        const bottomNote = 127 - Math.floor((this.scrollY + this.height) / this.keyHeight);
+        ctx.font = font(10);
+        ctx.textAlign = 'right';
+        for (let note = topNote; note >= Math.max(0, bottomNote); note--) {
+            const y = this.pitchToY(note);
+            const black = this.isBlackKey(note);
+            ctx.fillStyle = black ? theme.ink : theme.keyWhite;
+            ctx.fillRect(0, y, w, this.keyHeight);
+            ctx.fillStyle = black ? theme.ink : theme.line;
+            ctx.fillRect(0, y + this.keyHeight - 1, w, 1);
             if (note % 12 === 0) {
-                this.ctx.fillStyle = isBlack ? theme.text : theme.bg;
-                this.ctx.font = font(10);
-                this.ctx.textAlign = 'right';
-                this.ctx.fillText(`C${Math.floor(note / 12) - 1}`, this.pianoKeyWidth - 5, y + this.keyHeight - 5);
+                ctx.fillStyle = theme.graphite;
+                ctx.fillText(`C${Math.floor(note / 12) - 1}`, w - 4, y + this.keyHeight - 5);
             }
         }
-        
-        // Border right
-        this.ctx.strokeStyle = theme.bg;
-        this.ctx.beginPath();
-        this.ctx.moveTo(this.pianoKeyWidth, 0);
-        this.ctx.lineTo(this.pianoKeyWidth, this.height);
-        this.ctx.stroke();
+        ctx.fillStyle = theme.ink;
+        ctx.fillRect(w, 0, 1, this.height);
     }
 }

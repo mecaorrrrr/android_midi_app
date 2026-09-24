@@ -1,0 +1,253 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockup 3 — Cycles (v6)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Archivo:wdth,wght@62..125,300..700&display=swap" rel="stylesheet">
+<style>
+:root {
+    --body: #cfcfca;
+    --lane: #c5c5bf;
+    --lane-alt: #c9c9c3;
+    --key: #e2e2dd;
+    --ink: #1c1c1a;
+    --graphite: #5f5f5a;
+    --line: #b1b1aa;
+    --trig: #e4432d;
+    --oled: #141514;
+    --oled-text: #e8e8e2;
+    --oled-dim: #8f8f88;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #a9a9a3; font-family: 'Archivo', sans-serif; font-stretch: 90%; color: var(--ink); padding: 2rem 1rem 4rem; }
+.page-note { max-width: 1280px; margin: 0 auto 1rem; font-size: 0.95rem; color: #2f2f2c; }
+.page-note a { color: inherit; }
+figure { max-width: 1280px; margin: 0 auto 2.5rem; container-type: inline-size; }
+.states { max-width: 1280px; margin: 0 auto 1.2rem; padding: 0.4rem 0; display: flex; flex-wrap: wrap; gap: 1.6rem; font-size: 0.9rem; color: #2f2f2c; }
+.states span { display: inline-flex; align-items: center; gap: 0.6rem; }
+.tk { width: 2.8rem; height: 2.8rem; border-radius: 0.35rem; border: 1px solid #b4b4ad; font-style: normal; font-weight: 500; font-size: 0.75rem;
+    background: linear-gradient(180deg, #ebebe7, #dededa); box-shadow: inset 0 1px 0 rgba(255,255,255,.75), 0 0.12rem 0 #a9a9a3;
+    display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-end; padding: 0 0 0.35rem 0.45rem; position: relative; }
+.tk b { position: absolute; top: 0.45rem; right: 0.45rem; width: 0.6rem; height: 0.24rem; border-radius: 0.12rem; }
+.tk.down { transform: translateY(0.1rem); background: linear-gradient(180deg, #e2e2de, #d9d9d4); box-shadow: inset 0 1px 1px rgba(0,0,0,.14), 0 0.02rem 0 #a9a9a3; }
+figcaption { font-size: 0.9rem; color: #2f2f2c; margin: 0 0 0.5rem 0.25rem; }
+
+.unit {
+    font-size: 1.25cqw; /* 1em = 16px at 1280px */
+    aspect-ratio: 16 / 10;
+    background: var(--body);
+    border-radius: 0.6em;
+    padding: 1em 1.4em 0.6em;
+    display: grid;
+    grid-template-rows: 3.6em 1fr 1.5em;
+    gap: 0.8em;
+    box-shadow: 0 0 0 1px #bdbdb7, 0 1.4em 2.6em rgba(40, 40, 35, 0.25);
+}
+
+/* Top: one-line parameter screen + keys */
+.top { display: grid; grid-template-columns: 1fr auto; gap: 1.4em; }
+.oled {
+    background: var(--oled); border-radius: 0.3em; color: var(--oled-text);
+    padding: 0 1em; display: flex; align-items: center; gap: 1.6em;
+    box-shadow: inset 0 0 0 0.2em #0b0c0b;
+}
+.oled .title { display: flex; align-items: baseline; gap: 0.7em; min-width: 12em; }
+.oled .title b { font-size: 1.35em; font-weight: 600; font-stretch: 75%; }
+.oled .title .pipe { align-self: center; width: 1px; height: 1.2em; background: #55554f; }
+.oled .title .pat { font-weight: 300; }
+.oled .title span { font-size: 0.8em; color: var(--oled-dim); }
+.param { display: flex; align-items: baseline; gap: 0.5em; padding-left: 1.2em; border-left: 1px solid #2e2f2d; }
+.param span { font-size: 0.78em; color: var(--oled-dim); }
+.param b { font-size: 1.3em; font-weight: 300; font-stretch: 75%; }
+
+.keys { display: flex; gap: 0.5em; align-items: center; }
+.k {
+    width: 5.6em; height: 3.9em; border: 1px solid #b4b4ad; border-radius: 0.45em;
+    background: linear-gradient(180deg, #ebebe7 0%, #dededa 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75), 0 0.14em 0 #a9a9a3, 0 0.3em 0.5em rgba(40, 40, 35, 0.12);
+    color: #3a3a37; font-family: 'Archivo', sans-serif; font-stretch: 100%; font-weight: 500;
+    font-size: 0.72em; letter-spacing: 0.03em;
+    display: flex; flex-direction: column; align-items: center; justify-content: space-between;
+    padding: 0.7em 0 0.6em;
+}
+.k i {
+    width: 1.5em; height: 0.3em; border-radius: 0.15em;
+    background: #a9a9a2; box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.25);
+}
+.k.on { color: var(--ink); }
+.k.on i { background: var(--trig); box-shadow: 0 0 0.35em rgba(228, 67, 45, 0.85), inset 0 0 0 1px rgba(255, 120, 90, 0.6); }
+.keys .sep { width: 0.6em; }
+
+/* Song: track keys + lanes with clips at their real length */
+.song { display: grid; grid-template-columns: 11em 1fr; grid-template-rows: 1.3em repeat(8, 1fr); column-gap: 1em; row-gap: 0.3em; min-height: 0; }
+.ruler { grid-column: 2; grid-row: 1; position: relative; font-size: 0.78em; color: var(--graphite); }
+.ruler span { position: absolute; bottom: 0; padding-left: 0.25em; border-left: 1px solid var(--line); height: 100%; display: flex; align-items: flex-end; }
+.ruler span.major { color: var(--ink); border-left-color: var(--ink); }
+.ruler .loop { position: absolute; top: 0; height: 0.22em; background: var(--trig); }
+.track { display: flex; align-items: center; gap: 0.7em; }
+.tkey {
+    width: 3.3em; height: 100%; max-height: 3.3em; border-radius: 0.35em; border: 1px solid #b4b4ad;
+    background: linear-gradient(180deg, #ebebe7 0%, #dededa 100%);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75), 0 0.14em 0 #a9a9a3, 0 0.25em 0.45em rgba(40, 40, 35, 0.12);
+    display: flex; flex-direction: column; align-items: flex-start; justify-content: flex-end;
+    padding: 0 0 0.45em 0.55em; font-size: 0.8em; font-weight: 500; font-stretch: 100%; color: #3a3a37;
+    position: relative; transition: transform 0.06s, box-shadow 0.06s;
+}
+/* LED bar: audible = white, muted = off, solo = red */
+.tkey i {
+    position: absolute; top: 0.55em; right: 0.55em;
+    width: 0.75em; height: 0.3em; border-radius: 0.15em;
+    background: #fdfdf8; box-shadow: 0 0 0 1px #8d8d86, 0 0 0.45em rgba(255, 255, 235, 0.95);
+}
+.track.muted .tkey i { background: #7e7e78; box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.25); }
+.track.solo .tkey i { background: var(--trig); box-shadow: 0 0 0.35em rgba(228, 67, 45, 0.85), inset 0 0 0 1px rgba(255, 120, 90, 0.6); }
+/* Selected track: only the key is held down (it sinks by its skirt height) */
+.track.cur .tkey {
+    transform: translateY(0.12em);
+    background: linear-gradient(180deg, #e2e2de 0%, #d9d9d4 100%);
+    box-shadow: inset 0 1px 1px rgba(0, 0, 0, 0.14), 0 0.02em 0 #a9a9a3;
+}
+.track.cur .n span { font-weight: 600; }
+.track .n { display: flex; flex-direction: column; line-height: 1.15; }
+.track .n small { color: var(--graphite); font-size: 0.8em; }
+.track.muted .n { color: #8f8f89; }
+.lane {
+    position: relative; border-radius: 0.25em;
+    background:
+        repeating-linear-gradient(90deg, var(--line) 0 1px, transparent 1px calc(100% / 4)),
+        var(--lane);
+    background-size: calc(100% / 4) 100%, auto;
+}
+.lane.cur { background-color: var(--lane-alt); box-shadow: inset 0 0 0 1px #a3a39c; }
+.lane .bars { position: absolute; inset: 0; background: repeating-linear-gradient(90deg, rgba(28, 28, 26, 0.08) 0 1px, transparent 1px calc(100% / 16)); }
+.clip {
+    position: absolute; top: 0.25em; bottom: 0.25em; border-radius: 0.2em;
+    background: var(--ink); color: var(--body); padding: 0.3em 0.5em; overflow: hidden;
+}
+.clip b { font-size: 0.85em; font-weight: 600; }
+.clip .nt { position: absolute; height: 0.2em; background: #6d6d67; }
+.clip.muted { background: #9f9f99; color: var(--body); }
+.clip.muted .nt { background: #bcbcb6; }
+.cursor { position: absolute; top: 0; bottom: 0; outline: 0.18em solid var(--trig); outline-offset: -0.05em; border-radius: 0.25em; }
+.playhead { position: absolute; top: 1.3em; bottom: 0; width: 0.14em; background: var(--trig); }
+.playhead::before { content: ''; position: absolute; top: -0.25em; left: -0.2em; width: 0.54em; height: 0.54em; border-radius: 50%; background: var(--trig); }
+.lanes-wrap { grid-column: 2; grid-row: 2 / span 8; position: relative; pointer-events: none; }
+
+/* Piano roll */
+.roll { display: grid; grid-template-columns: 3em 1fr; column-gap: 0.8em; min-height: 0; }
+.kbd { display: flex; flex-direction: column; border: 1px solid var(--ink); border-radius: 0.2em; overflow: hidden; }
+.kbd div { flex: 1; background: var(--key); border-bottom: 1px solid var(--line); font-size: 0.62em; display: flex; align-items: center; justify-content: flex-end; padding-right: 0.3em; color: var(--graphite); }
+.kbd div.b { background: var(--ink); border-bottom-color: var(--ink); }
+.grid { position: relative; overflow: hidden; background: var(--lane); border-top: 1px solid var(--ink); border-bottom: 1px solid var(--ink); }
+.hl { position: absolute; left: 0; right: 0; height: 1px; background: #bcbcb5; }
+.row-b { position: absolute; left: 0; right: 0; background: rgba(28, 28, 26, 0.05); }
+.vl { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--line); }
+.vl.bar { background: var(--ink); }
+.note { position: absolute; background: var(--ink); }
+.note.sel { background: var(--trig); }
+.ghost { position: absolute; box-shadow: inset 0 0 0 1px #8f8f89; }
+.after { position: absolute; top: 0; bottom: 0; right: 0; background: rgba(28, 28, 26, 0.12); }
+.ncur { position: absolute; outline: 0.18em solid var(--trig); outline-offset: 0.1em; }
+
+/* Bottom silkscreen: gamepad legend */
+.legend { display: flex; align-items: center; gap: 1.6em; border-top: 1px solid var(--line); font-size: 0.8em; color: var(--graphite); }
+.legend span b { color: var(--ink); font-weight: 600; margin-right: 0.35em; }
+</style>
+</head>
+<body>
+<p class="page-note">案3 改訂版：ミニマルで北欧的な機材風。<a href="index.html">案の一覧へ</a></p>
+
+<div class="states">
+    <span><i class="tk"><b style="background:#fdfdf8;box-shadow:0 0 0 1px #8d8d86,0 0 0.45em rgba(255,255,235,.95)"></b><span>T1</span></i>通常（白点灯）</span>
+    <span><i class="tk"><b style="background:#7e7e78;box-shadow:inset 0 1px 1px rgba(0,0,0,.25)"></b><span>T1</span></i>Mute（消灯）</span>
+    <span><i class="tk"><b style="background:#e4432d;box-shadow:0 0 0.35em rgba(228,67,45,.85)"></b><span>T1</span></i>Solo（赤点灯）</span>
+    <span><i class="tk down"><b style="background:#fdfdf8;box-shadow:0 0 0 1px #8d8d86,0 0 0.45em rgba(255,255,235,.95)"></b><span>T1</span></i>選択中（押し込み）</span>
+</div>
+<figure>
+    <figcaption>トラック一覧（SONG）</figcaption>
+    <div class="unit" id="song"></div>
+</figure>
+<figure>
+    <figcaption>ピアノロール（PATTERN）</figcaption>
+    <div class="unit" id="roll"></div>
+</figure>
+
+<script src="data.js"></script>
+<script>
+const M = window.MOCK;
+const pct = (v) => `${(v * 100).toFixed(3)}%`;
+
+function topBlock(title, sub, params, view) {
+    const p = params.map(([label, value]) => `<div class="param"><span>${label}</span><b>${value}</b></div>`).join('');
+    const key = (label, on) => `<button class="k ${on ? 'on' : ''}"><i></i><span>${label}</span></button>`;
+    return `<div class="top">
+        <div class="oled"><div class="title">${title}<span>${sub}</span></div>${p}</div>
+        <div class="keys">${key('Song', view === 'song')}${key('Pattern', view === 'roll')}<span class="sep"></span>${key('Tone')}${key('Add')}${key('File')}</div>
+    </div>`;
+}
+
+function legend(items) {
+    return `<div class="legend">${items.map(([k, t]) => `<span><b>${k}</b>${t}</span>`).join('')}</div>`;
+}
+
+// ---------------------------------------------------------------- Song
+(() => {
+    const s = M.song;
+    const cur = M.tracks[s.cursorTrack];
+    const ruler = Array.from({ length: M.bars }, (_, b) => `<span class="${b % 4 === 0 ? 'major' : ''}" style="left:${pct(b / M.bars)}">${b + 1}</span>`).join('');
+    let rows = '';
+    M.tracks.forEach((t, i) => {
+        rows += `<div class="track ${i === s.cursorTrack ? 'cur' : ''} ${t.mute ? 'muted' : ''} ${t.solo ? 'solo' : ''}" style="grid-row:${i + 2}"><div class="tkey"><i></i><span>T${i + 1}</span></div><div class="n"><span>${t.name}</span><small>${t.inst}</small></div></div>`;
+        const clips = M.clips.filter(c => c.track === i).map(c => {
+            const nt = M.preview(c.track, c.pattern, c.length).map(n =>
+                `<i class="nt" style="left:${pct(n.x)};top:calc(1.35em + ${pct(n.y * 0.5)});width:${pct(n.w)}"></i>`).join('');
+            return `<div class="clip ${t.mute ? 'muted' : ''}" style="left:calc(${pct(c.start / M.bars)} + 2px);width:calc(${pct(c.length / M.bars)} - 4px)"><b>${c.pattern}</b>${nt}</div>`;
+        }).join('');
+        const cursor = i === s.cursorTrack ? `<i class="cursor" style="left:${pct(s.cursorBar / M.bars)};width:${pct(1 / M.bars)}"></i>` : '';
+        rows += `<div class="lane ${i === s.cursorTrack ? 'cur' : ''}" style="grid-column:2;grid-row:${i + 2}"><i class="bars"></i>${clips}${cursor}</div>`;
+    });
+
+    document.getElementById('song').innerHTML = `
+        ${topBlock(`<b>${cur.name}</b>`, `T3, ${cur.inst}`, [['Bar', '9'], ['Volume', '72'], ['Pan', 'L20'], ['Pattern', 'B'], ['Tempo', '120']], 'song')}
+        <div class="song">
+            <div class="ruler">${ruler}<i class="loop" style="left:${pct(s.loop[0] / M.bars)};width:${pct((s.loop[1] - s.loop[0]) / M.bars)}"></i></div>
+            ${rows}
+            <div class="lanes-wrap" style="grid-row:1 / span 9"><i class="playhead" style="left:${pct(s.playheadBar / M.bars)}"></i></div>
+        </div>
+        ${legend([['A', 'Place or open'], ['B', 'Copy, hold to delete'], ['X', 'Play'], ['Y', 'Select'], ['Start', 'Next track'], ['Select', 'Hold for pattern']])}`;
+})();
+
+// ----------------------------------------------------------- Piano roll
+(() => {
+    const r = M.roll;
+    const rows = r.high - r.low + 1;
+    const span = r.beats + 1;
+    const y = (p) => pct((r.high - p) / rows);
+    const x = (t) => pct(t / span);
+    const keys = Array.from({ length: rows }, (_, i) => {
+        const p = r.high - i;
+        return `<div class="${M.isBlack(p) ? 'b' : ''}">${p % 12 === 0 ? M.noteName(p) : ''}</div>`;
+    }).join('');
+    const blackRows = Array.from({ length: rows }, (_, i) => r.high - i).filter(M.isBlack)
+        .map(p => `<i class="row-b" style="top:${y(p)};height:${pct(1 / rows)}"></i>`).join('');
+    const hlines = Array.from({ length: rows }, (_, i) => `<i class="hl" style="top:${pct(i / rows)}"></i>`).join('');
+    const vlines = Array.from({ length: span * 2 }, (_, i) => `<i class="vl ${i % 8 === 0 ? 'bar' : ''}" style="left:${x(i / 2)}"></i>`).join('');
+    const ghosts = r.ghosts.map(n => `<i class="ghost" style="left:${x(n.t)};width:${x(n.d)};top:${y(n.p)};height:${pct(1 / rows)}"></i>`).join('');
+    const notes = r.notes.map((n, i) => `<i class="note ${r.selected.includes(i) ? 'sel' : ''}" style="opacity:${(0.35 + n.v / 195).toFixed(2)};left:calc(${x(n.t)} + 1px);width:calc(${x(n.d)} - 2px);top:calc(${y(n.p)} + 2px);height:calc(${pct(1 / rows)} - 4px)"></i>`).join('');
+
+    document.getElementById('roll').innerHTML = `
+        ${topBlock('<b>Keys</b><i class="pipe"></i><b class="pat">B</b>', '2 bars', [['Note', 'C5'], ['Velocity', '110'], ['Length', '3/8'], ['Grid', '1/8']], 'roll')}
+        <div class="roll">
+            <div class="kbd">${keys}</div>
+            <div class="grid">${blackRows}${hlines}${vlines}${ghosts}${notes}
+                <i class="after" style="width:${x(1)}"></i>
+                <i class="ncur" style="left:${x(r.cursor.t)};width:${x(0.5)};top:${y(r.cursor.p)};height:${pct(1 / rows)}"></i>
+            </div>
+        </div>
+        ${legend([['A', 'Add note, hold to edit'], ['B', 'Copy, hold to delete'], ['X', 'Play'], ['Y', 'Select'], ['L2', 'Grid'], ['Select', 'Hold for song']])}`;
+})();
+</script>
+</body>
+</html>

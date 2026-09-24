@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Mockup 2 — Studio</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Albert+Sans:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+:root {
+    --window: #1f2226;
+    --panel: #2a2e34;
+    --panel-2: #33383f;
+    --line: #3d434b;
+    --line-soft: #2f343a;
+    --text: #dfe3e8;
+    --muted: #8e959e;
+    --select: #5aa9f5;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { background: #15171a; font-family: 'Albert Sans', sans-serif; color: var(--text); padding: 2rem 1rem 4rem; }
+.page-note { max-width: 1280px; margin: 0 auto 1rem; font-size: 0.95rem; color: #9aa1aa; }
+.page-note a { color: inherit; }
+figure { max-width: 1280px; margin: 0 auto 2.5rem; container-type: inline-size; }
+figcaption { font-size: 0.9rem; color: #9aa1aa; margin: 0 0 0.5rem 0.25rem; }
+
+.frame {
+    font-size: 1.25cqw; /* 1em = 16px at 1280px */
+    aspect-ratio: 16 / 10;
+    background: var(--window);
+    border-radius: 1em;
+    overflow: hidden;
+    display: grid;
+    grid-template-rows: 4.2em 1fr 2.4em;
+    box-shadow: 0 1.5em 3em rgba(0, 0, 0, 0.5);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Toolbar */
+.toolbar {
+    display: grid; grid-template-columns: 1fr auto 1fr; align-items: center;
+    padding: 0 1.2em; background: linear-gradient(#2c3037, #262a2f); border-bottom: 1px solid #14161a;
+}
+.views { display: flex; background: var(--window); border-radius: 0.6em; padding: 0.2em; width: max-content; }
+.views button { border: none; background: none; color: var(--muted); font: inherit; font-size: 0.95em; padding: 0.45em 1.1em; border-radius: 0.45em; }
+.views button.on { background: var(--panel-2); color: var(--text); box-shadow: 0 1px 0 #444a52 inset; }
+.transport { display: flex; align-items: center; gap: 1.4em; }
+.tbtn { width: 2.2em; height: 2.2em; border-radius: 50%; border: none; background: var(--panel-2); color: var(--text); display: grid; place-items: center; font-size: 0.9em; }
+.tbtn.loop { color: var(--select); }
+.clock { display: flex; align-items: baseline; gap: 1.2em; padding: 0.2em 1.2em; border-radius: 0.6em; background: #17191c; box-shadow: inset 0 1px 0 #0d0e10; }
+.clock .pos { font-size: 2.1em; font-weight: 300; letter-spacing: 0.02em; }
+.clock .pos span { color: var(--muted); }
+.clock .meta { display: flex; flex-direction: column; font-size: 0.8em; color: var(--muted); line-height: 1.25; }
+.clock .meta b { color: var(--text); font-weight: 500; }
+.menus { justify-self: end; display: flex; gap: 0.4em; }
+.menus button { border: 1px solid var(--line); background: var(--panel); color: var(--text); font: inherit; font-size: 0.95em; padding: 0.45em 1em; border-radius: 0.5em; }
+
+/* Body */
+.body { display: grid; grid-template-columns: 15em 1fr; min-height: 0; }
+.inspector { background: var(--panel); border-right: 1px solid #16181b; padding: 1.1em 1.1em; display: flex; flex-direction: column; gap: 1.1em; }
+.ins-title { display: flex; align-items: center; gap: 0.6em; font-size: 1.25em; font-weight: 600; }
+.ins-title i { width: 0.35em; height: 1.2em; border-radius: 0.2em; background: var(--c); }
+.field { display: flex; flex-direction: column; gap: 0.35em; }
+.field label { font-size: 0.8em; color: var(--muted); }
+.field .value { display: flex; justify-content: space-between; font-size: 0.95em; }
+.select-box { background: var(--window); border: 1px solid var(--line); border-radius: 0.45em; padding: 0.5em 0.7em; font-size: 0.95em; display: flex; justify-content: space-between; }
+.slider { height: 0.35em; border-radius: 1em; background: var(--window); position: relative; }
+.slider i { position: absolute; left: 0; top: 0; bottom: 0; border-radius: 1em; background: var(--c, var(--select)); }
+.slider b { position: absolute; top: 50%; width: 0.9em; height: 0.9em; border-radius: 50%; background: #e9edf2; transform: translate(-50%, -50%); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5); }
+.ms { display: flex; gap: 0.4em; }
+.ms button { flex: 1; border: 1px solid var(--line); background: var(--window); color: var(--muted); font: inherit; font-size: 0.85em; padding: 0.35em 0; border-radius: 0.4em; }
+.env { height: 3.4em; background: var(--window); border-radius: 0.5em; }
+.env svg { width: 100%; height: 100%; }
+.note-big { font-size: 2.2em; font-weight: 300; line-height: 1; }
+
+/* Arrangement */
+.arrange { display: grid; grid-template-columns: 11em 1fr; grid-template-rows: 2.2em 1fr; min-height: 0; }
+.corner { background: var(--panel); border-bottom: 1px solid #16181b; border-right: 1px solid #16181b; }
+.ruler { position: relative; background: var(--panel); border-bottom: 1px solid #16181b; font-size: 0.8em; color: var(--muted); }
+.ruler span { position: absolute; top: 0.55em; padding-left: 0.4em; border-left: 1px solid var(--line); height: 1.6em; }
+.ruler .loop { position: absolute; top: 0.25em; height: 0.45em; border-radius: 0.3em; background: rgba(90, 169, 245, 0.55); }
+.heads { display: grid; grid-template-rows: repeat(8, 1fr); border-right: 1px solid #16181b; }
+.head { display: flex; align-items: center; gap: 0.6em; padding: 0 0.7em; background: var(--panel); border-bottom: 1px solid #1b1d21; }
+.head i { width: 0.3em; align-self: stretch; margin: 0.45em 0; border-radius: 0.2em; background: var(--c); }
+.head .n { display: flex; flex-direction: column; line-height: 1.2; min-width: 0; }
+.head .n small { color: var(--muted); font-size: 0.78em; white-space: nowrap; }
+.head .m { margin-left: auto; display: flex; gap: 0.25em; }
+.head .m b { width: 1.35em; height: 1.35em; border-radius: 0.3em; background: var(--window); color: var(--muted); font-size: 0.72em; font-weight: 600; display: grid; place-items: center; }
+.head .m b.on { background: #d9a441; color: #1b1d21; }
+.head.cur { background: var(--panel-2); }
+.lanes { position: relative; background:
+    repeating-linear-gradient(90deg, var(--line-soft) 0 1px, transparent 1px calc(100% / 16)),
+    repeating-linear-gradient(180deg, transparent 0 calc(100% / 8 - 1px), #1b1d21 calc(100% / 8 - 1px) calc(100% / 8)); }
+.clip { position: absolute; border-radius: 0.35em; overflow: hidden; background: color-mix(in srgb, var(--c) 30%, #1f2226); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 70%, #000); }
+.clip header { height: 1.25em; padding: 0 0.45em; background: color-mix(in srgb, var(--c) 80%, #000); color: #101215; font-size: 0.75em; font-weight: 600; display: flex; align-items: center; }
+.clip .nt { position: absolute; height: 0.22em; border-radius: 0.1em; background: color-mix(in srgb, var(--c) 70%, #fff); }
+.clip.muted { filter: saturate(0.1) brightness(0.8); opacity: 0.6; }
+.clip.cur { box-shadow: inset 0 0 0 1px #fff, 0 0 0 1px #fff; }
+.cursor { position: absolute; border: 2px solid var(--select); border-radius: 0.35em; }
+.playhead { position: absolute; top: 0; bottom: 0; width: 1px; background: #f2f4f7; }
+
+/* Piano roll */
+.roll { display: grid; grid-template-columns: 4.2em 1fr; grid-template-rows: 2.2em 1fr 5em; min-height: 0; }
+.kbd { display: flex; flex-direction: column; border-right: 1px solid #16181b; }
+.kbd div { flex: 1; background: #d7dbe0; border-bottom: 1px solid #a9aeb5; font-size: 0.65em; color: #2a2e34; display: flex; align-items: center; justify-content: flex-end; padding-right: 0.4em; }
+.kbd div.b { background: #2a2e34; border-bottom-color: #2a2e34; margin-right: 35%; }
+.grid { position: relative; overflow: hidden; }
+.row-b { position: absolute; left: 0; right: 0; background: rgba(0, 0, 0, 0.18); }
+.vline { position: absolute; top: 0; bottom: 0; width: 1px; background: var(--line-soft); }
+.vline.bar { background: #4a515a; }
+.note { position: absolute; border-radius: 0.2em; background: color-mix(in srgb, var(--c) calc(var(--v) * 100%), #3a4250); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--c) 70%, #000); }
+.note.sel { background: var(--select); box-shadow: inset 0 0 0 1px #fff; }
+.ghost { position: absolute; border-radius: 0.2em; background: rgba(200, 96, 122, 0.18); }
+.after { position: absolute; top: 0; bottom: 0; right: 0; background: rgba(10, 11, 13, 0.55); border-left: 2px solid var(--muted); }
+.ncursor { position: absolute; border: 2px solid var(--select); border-radius: 0.2em; }
+.vel-head { background: var(--panel); border-top: 1px solid #16181b; border-right: 1px solid #16181b; font-size: 0.75em; color: var(--muted); padding: 0.6em 0.5em; }
+.vel { position: relative; border-top: 1px solid #16181b; background: #1b1e22; }
+.vel i { position: absolute; bottom: 0.4em; width: 2px; background: var(--c); }
+.vel i::after { content: ''; position: absolute; top: -0.25em; left: -0.25em; width: 0.55em; height: 0.55em; border-radius: 50%; background: inherit; }
+.vel i.sel { background: var(--select); }
+
+/* Status bar: gamepad hints */
+.status { display: flex; align-items: center; gap: 1.5em; padding: 0 1.2em; background: #191b1f; border-top: 1px solid #14161a; font-size: 0.82em; color: var(--muted); }
+.hint { display: inline-flex; align-items: center; gap: 0.45em; }
+.hint b { min-width: 1.7em; height: 1.7em; padding: 0 0.4em; border-radius: 0.85em; background: var(--panel-2); color: var(--text); font-weight: 600; font-size: 0.9em; display: inline-grid; place-items: center; }
+.status .pad { margin-left: auto; }
+</style>
+</head>
+<body>
+<p class="page-note">案2：シンプルでエレガントなソフトウェア DAW 風（Studio One のイメージ）。<a href="index.html">案の一覧へ</a></p>
+
+<figure>
+    <figcaption>トラック一覧（SONG）</figcaption>
+    <div class="frame" id="song"></div>
+</figure>
+<figure>
+    <figcaption>ピアノロール（PATTERN）</figcaption>
+    <div class="frame" id="roll"></div>
+</figure>
+
+<script src="data.js"></script>
+<script>
+const M = window.MOCK;
+const PALETTE = ['#d8905a', '#c7607a', '#6f86e0', '#9a78d6', '#4fb3a2', '#7fab63', '#d1b24f', '#6aa6cf'];
+const pct = (v) => `${(v * 100).toFixed(3)}%`;
+
+function toolbar(view, pos) {
+    return `<div class="toolbar">
+        <div class="views"><button class="${view === 'song' ? 'on' : ''}">Song</button><button class="${view === 'roll' ? 'on' : ''}">Pattern</button></div>
+        <div class="transport">
+            <button class="tbtn">■</button><button class="tbtn">▶</button><button class="tbtn loop">⟲</button>
+            <div class="clock"><div class="pos">${pos}</div>
+                <div class="meta"><span><b>120.00</b> bpm</span><span><b>4 / 4</b> time</span></div></div>
+        </div>
+        <div class="menus"><button>Tone</button><button>Add</button><button>File</button></div>
+    </div>`;
+}
+
+function statusBar(items) {
+    return `<div class="status">${items.map(([k, t]) => `<span class="hint"><b>${k}</b>${t}</span>`).join('')}
+        <span class="pad">Gamepad connected</span></div>`;
+}
+
+function envSvg() {
+    return `<svg viewBox="0 0 200 50" preserveAspectRatio="none"><polyline points="4,46 40,6 80,20 140,20 196,46" fill="none" stroke="#6f86e0" stroke-width="2" vector-effect="non-scaling-stroke"/></svg>`;
+}
+
+// ---------------------------------------------------------------- Song
+(() => {
+    const s = M.song;
+    const cur = M.tracks[s.cursorTrack];
+    const heads = M.tracks.map((t, i) => `
+        <div class="head ${i === s.cursorTrack ? 'cur' : ''}" style="--c:${PALETTE[i]}"><i></i>
+            <div class="n"><span>${t.name}</span><small>${t.inst}</small></div>
+            <div class="m"><b class="${t.mute ? 'on' : ''}">M</b><b>S</b></div></div>`).join('');
+    const clips = M.clips.map(c => {
+        const isCur = c.track === s.cursorTrack && c.start === s.cursorBar;
+        const nt = M.preview(c.track, c.pattern, c.length).map(n =>
+            `<i class="nt" style="left:${pct(n.x)};top:calc(1.5em + ${pct(n.y * 0.55)});width:${pct(n.w)}"></i>`).join('');
+        return `<div class="clip ${M.tracks[c.track].mute ? 'muted' : ''} ${isCur ? 'cur' : ''}" style="--c:${PALETTE[c.track]};left:calc(${pct(c.start / M.bars)} + 1px);width:calc(${pct(c.length / M.bars)} - 2px);top:calc(${pct(c.track / 8)} + 0.2em);height:calc(${pct(1 / 8)} - 0.4em)">
+            <header>${M.tracks[c.track].name} ${c.pattern}</header>${nt}</div>`;
+    }).join('');
+    const ruler = Array.from({ length: M.bars }, (_, i) => `<span style="left:${pct(i / M.bars)}">${i + 1}</span>`).join('');
+
+    document.getElementById('song').innerHTML = `
+        ${toolbar('song', '9<span>.</span>1<span>.</span>1')}
+        <div class="body">
+            <aside class="inspector">
+                <div class="ins-title" style="--c:${PALETTE[s.cursorTrack]}"><i></i>${cur.name}</div>
+                <div class="field"><label>Instrument</label><div class="select-box"><span>${cur.inst}</span><span>⌄</span></div></div>
+                <div class="field"><div class="value"><label>Volume</label><span>72</span></div><div class="slider"><i style="width:72%"></i><b style="left:72%"></b></div></div>
+                <div class="field"><div class="value"><label>Pan</label><span>L20</span></div><div class="slider"><i style="left:40%;width:10%"></i><b style="left:40%"></b></div></div>
+                <div class="ms"><button>Mute</button><button>Solo</button></div>
+                <div class="field"><div class="value"><label>Tone</label><span>Edited</span></div><div class="env">${envSvg()}</div></div>
+                <div class="field"><div class="value"><label>Clip</label><span>Pattern B, 4 bars</span></div></div>
+            </aside>
+            <section class="arrange">
+                <div class="corner"></div>
+                <div class="ruler">${ruler}<i class="loop" style="left:${pct(s.loop[0] / M.bars)};width:${pct((s.loop[1] - s.loop[0]) / M.bars)}"></i></div>
+                <div class="heads">${heads}</div>
+                <div class="lanes">${clips}
+                    <div class="cursor" style="left:${pct(s.cursorBar / M.bars)};width:${pct(1 / M.bars)};top:${pct(s.cursorTrack / 8)};height:${pct(1 / 8)}"></div>
+                    <div class="playhead" style="left:${pct(s.playheadBar / M.bars)}"></div>
+                </div>
+            </section>
+        </div>
+        ${statusBar([['A', 'Place or open'], ['B', 'Copy, hold to delete'], ['X', 'Play'], ['Y', 'Select'], ['Start', 'Next track'], ['Select', 'Hold for pattern']])}`;
+})();
+
+// ----------------------------------------------------------- Piano roll
+(() => {
+    const r = M.roll;
+    const rows = r.high - r.low + 1;
+    const span = r.beats + 1;
+    const y = (p) => pct((r.high - p) / rows);
+    const x = (t) => pct(t / span);
+    const keys = Array.from({ length: rows }, (_, i) => {
+        const p = r.high - i;
+        return `<div class="${M.isBlack(p) ? 'b' : ''}">${p % 12 === 0 ? M.noteName(p) : ''}</div>`;
+    }).join('');
+    const blackRows = Array.from({ length: rows }, (_, i) => r.high - i).filter(M.isBlack)
+        .map(p => `<i class="row-b" style="top:${y(p)};height:${pct(1 / rows)}"></i>`).join('');
+    const vlines = Array.from({ length: span * 2 }, (_, i) => `<i class="vline ${i % 8 === 0 ? 'bar' : ''}" style="left:${x(i / 2)}"></i>`).join('');
+    const ghosts = r.ghosts.map(n => `<i class="ghost" style="left:${x(n.t)};width:${x(n.d)};top:${y(n.p)};height:${pct(1 / rows)}"></i>`).join('');
+    const notes = r.notes.map((n, i) => `<i class="note ${r.selected.includes(i) ? 'sel' : ''}" style="--c:${PALETTE[r.track]};--v:${(n.v / 127).toFixed(2)};left:calc(${x(n.t)} + 1px);width:calc(${x(n.d)} - 2px);top:calc(${y(n.p)} + 1px);height:calc(${pct(1 / rows)} - 2px)"></i>`).join('');
+    const vel = r.notes.map((n, i) => `<i class="${r.selected.includes(i) ? 'sel' : ''}" style="--c:${PALETTE[r.track]};left:calc(${x(n.t)} + ${(n.p % 3) * 0.35 + 0.3}em);height:calc(${(n.v / 127 * 100).toFixed(1)}% - 1.2em)"></i>`).join('');
+    const ruler = Array.from({ length: span }, (_, i) => `<span style="left:${x(i)}">${i % 4 === 0 ? `${i / 4 + 1}` : `${Math.floor(i / 4) + 1}.${i % 4 + 1}`}</span>`).join('');
+
+    document.getElementById('roll').innerHTML = `
+        ${toolbar('roll', '2<span>.</span>1<span>.</span>1')}
+        <div class="body">
+            <aside class="inspector">
+                <div class="ins-title" style="--c:${PALETTE[r.track]}"><i></i>Keys, pattern B</div>
+                <div class="field"><label>Note</label><span class="note-big">C5</span></div>
+                <div class="field"><div class="value"><label>Velocity</label><span>110</span></div><div class="slider"><i style="width:87%"></i><b style="left:87%"></b></div></div>
+                <div class="field"><div class="value"><label>Length</label><span>3/8</span></div></div>
+                <div class="field"><div class="value"><label>Start</label><span>2.1.1</span></div></div>
+                <div class="field"><div class="value"><label>Grid</label><span>1/8</span></div></div>
+                <div class="field"><div class="value"><label>Pattern length</label><span>2 bars</span></div></div>
+            </aside>
+            <section class="roll">
+                <div class="corner"></div>
+                <div class="ruler">${ruler}</div>
+                <div class="kbd">${keys}</div>
+                <div class="grid">${blackRows}${vlines}${ghosts}${notes}
+                    <i class="after" style="width:${x(1)}"></i>
+                    <i class="ncursor" style="left:${x(r.cursor.t)};width:${x(0.5)};top:${y(r.cursor.p)};height:${pct(1 / rows)}"></i>
+                </div>
+                <div class="vel-head">Velocity</div>
+                <div class="vel">${vel}</div>
+            </section>
+        </div>
+        ${statusBar([['A', 'Add note, hold to edit'], ['B', 'Copy, hold to delete'], ['X', 'Play'], ['Y', 'Select'], ['L2', 'Grid'], ['Select', 'Hold for song']])}`;
+})();
+</script>
+</body>
+</html>
