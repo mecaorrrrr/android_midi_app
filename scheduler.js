@@ -11,13 +11,24 @@ export class Scheduler {
         this.startDelay = 0.02;  // seconds between pressing play and the first note
         this.segments = [];
         this.scheduledBeat = 0;  // end of the already-scheduled range in the last segment
+        this.offset = 0;         // song beat where the view's timeline starts
     }
 
     get ctx() {
         return this.app.audio.ctx;
     }
 
+    // Tempo-map helpers in the view's timeline (the pattern view starts at a song offset)
+    secondsBetween(b0, b1) {
+        return this.app.transport.secondsBetween(b0 + this.offset, b1 + this.offset);
+    }
+
+    beatAfter(b0, seconds) {
+        return this.app.transport.beatAfter(b0 + this.offset, seconds) - this.offset;
+    }
+
     start(fromBeat) {
+        this.offset = this.app.getPlaybackBeatOffset();
         this.segments = [{ ctxTime: this.ctx.currentTime + this.startDelay, beat: fromBeat }];
         this.scheduledBeat = fromBeat;
         this.update();
@@ -35,12 +46,11 @@ export class Scheduler {
         for (const s of this.segments) {
             if (s.ctxTime <= now) seg = s;
         }
-        return this.app.transport.beatAfter(seg.beat, now - seg.ctxTime);
+        return this.beatAfter(seg.beat, now - seg.ctxTime);
     }
 
     update() {
         if (this.segments.length === 0) return;
-        const transport = this.app.transport;
         const now = this.ctx.currentTime;
         const horizon = now + this.lookahead;
 
@@ -50,7 +60,7 @@ export class Scheduler {
             const region = this.app.getPlaybackLoop();
             const loopEnd = region && region.end > region.start ? region.end : Infinity;
 
-            const horizonBeat = transport.beatAfter(seg.beat, horizon - seg.ctxTime);
+            const horizonBeat = this.beatAfter(seg.beat, horizon - seg.ctxTime);
             const endBeat = Math.min(horizonBeat, loopEnd);
             if (endBeat > this.scheduledBeat) {
                 this.scheduleRange(this.scheduledBeat, endBeat, seg, loopEnd);
@@ -60,7 +70,7 @@ export class Scheduler {
             if (horizonBeat < loopEnd) break;
 
             this.segments.push({
-                ctxTime: seg.ctxTime + transport.secondsBetween(seg.beat, loopEnd),
+                ctxTime: seg.ctxTime + this.secondsBetween(seg.beat, loopEnd),
                 beat: region.start
             });
             this.scheduledBeat = region.start;
@@ -73,8 +83,7 @@ export class Scheduler {
     }
 
     scheduleRange(fromBeat, toBeat, seg, loopEnd) {
-        const transport = this.app.transport;
-        const toCtxTime = (beat) => seg.ctxTime + transport.secondsBetween(seg.beat, beat);
+        const toCtxTime = (beat) => seg.ctxTime + this.secondsBetween(seg.beat, beat);
 
         this.app.forEachPlaybackNote(fromBeat, toBeat, (trackId, time, note) => {
             const velocity = note.velocity !== undefined ? note.velocity : 100;

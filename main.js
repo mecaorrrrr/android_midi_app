@@ -8,7 +8,7 @@ import { loadTheme } from './theme.js';
 import { ToneEditor } from './tone_editor.js';
 import {
     createSong, normalizeSong, SONG_VERSION, getPattern, patternsOfTrack, createPattern, addClip,
-    clipAt, forEachSongNote, flattenTrack, songEnd
+    clipAt, forEachSongNote, flattenTrack, songEnd, isTrackAudible
 } from './song.js';
 
 const DEFAULT_PATTERN_BARS = 4;
@@ -190,14 +190,34 @@ class App {
             forEachSongNote(this.songData, fromBeat, toBeat, fn);
             return;
         }
-        // Pattern view plays the edited pattern even if its track is muted
+        // Pattern view: the edited pattern, plus the other tracks at the clip the pattern was
+        // opened from (the same place the ghost notes show). Mute / solo apply as in the song view.
         const pattern = this.currentPattern;
         if (!pattern) return;
-        for (const note of pattern.notes) {
-            if (note.time >= fromBeat && note.time < toBeat && note.time < pattern.length) {
-                fn(pattern.trackId, note.time, note);
+        const song = this.songData;
+        if (isTrackAudible(song, song.tracks[pattern.trackId])) {
+            for (const note of pattern.notes) {
+                if (note.time >= fromBeat && note.time < toBeat && note.time < pattern.length) {
+                    fn(pattern.trackId, note.time, note);
+                }
             }
         }
+        if (!this.isPatternInContext()) return;
+        const offset = this.patternContextStart;
+        forEachSongNote(song, offset + fromBeat, offset + toBeat, (trackId, time, note) => {
+            if (trackId !== pattern.trackId) fn(trackId, time - offset, note);
+        });
+    }
+
+    // True when the edited pattern is placed at patternContextStart (so it has a place in the song)
+    isPatternInContext() {
+        const pattern = this.currentPattern;
+        return !!pattern && this.songData.clips.some(c => c.patternId === pattern.id && Math.abs(c.start - this.patternContextStart) < 1e-6);
+    }
+
+    // Song beat at which the current view's timeline starts (tempo changes are looked up there)
+    getPlaybackBeatOffset() {
+        return this.view === 'pattern' && this.isPatternInContext() ? this.patternContextStart : 0;
     }
 
     // Notes of other tracks that sound while the edited pattern plays in the song (pattern-local times)
